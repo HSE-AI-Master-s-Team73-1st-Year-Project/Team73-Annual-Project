@@ -85,10 +85,10 @@ class MyDataset(Dataset):
 class MetricsDataset(Dataset):
 
     def __init__(self,
-                 faces_csv_file='/home/chaichuk/datasets/CelebAMask-HQ/new_celeba_captions.csv', 
-                 anime_faces_csv_file='/home/chaichuk/datasets/anime_faces/images.csv', 
-                 anime_faces_path='/home/chaichuk/datasets/anime_faces/images',
-                 faces_pictures_path='/home/chaichuk/datasets/CelebAMask-HQ/CelebA-HQ-img',
+                 faces_csv_file='~/datasets/CelebAMask-HQ/new_celeba_captions.csv', 
+                 anime_faces_csv_file='~/datasets/anime_faces/images.csv', 
+                 anime_faces_path='~/datasets/anime_faces/images',
+                 faces_pictures_path='~/datasets/CelebAMask-HQ/CelebA-HQ-img',
                  faces_caption_col='blip2_caption',
                  num_samples=2000,
                  size=512,
