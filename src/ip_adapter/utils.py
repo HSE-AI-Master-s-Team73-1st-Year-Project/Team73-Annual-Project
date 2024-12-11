@@ -12,12 +12,14 @@ def hook_fn(name):
 
     return forward_hook
 
+
 def register_cross_attention_hook(unet):
     for name, module in unet.named_modules():
         if name.split('.')[-1].startswith('attn2'):
             module.register_forward_hook(hook_fn(name))
 
     return unet
+
 
 def upscale(attn_map, target_size):
     attn_map = torch.mean(attn_map, dim=0)
@@ -43,6 +45,8 @@ def upscale(attn_map, target_size):
 
     attn_map = torch.softmax(attn_map, dim=0)
     return attn_map
+
+
 def get_net_attn_map(image_size, batch_size=2, instance_or_negative=False, detach=True):
 
     idx = 0 if instance_or_negative else 1
@@ -57,6 +61,7 @@ def get_net_attn_map(image_size, batch_size=2, instance_or_negative=False, detac
     net_attn_maps = torch.mean(torch.stack(net_attn_maps,dim=0),dim=0)
 
     return net_attn_maps
+
 
 def attnmaps2images(net_attn_maps):
 
@@ -77,8 +82,12 @@ def attnmaps2images(net_attn_maps):
 
     #print(total_attn_scores)
     return images
+
+
 def is_torch2_available():
     return hasattr(F, "scaled_dot_product_attention")
+
+
 
 def get_generator(seed, device):
 
