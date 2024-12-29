@@ -36,6 +36,8 @@ class ImageProjModel(torch.nn.Module):
         self.norm = torch.nn.LayerNorm(cross_attention_dim)
 
     def forward(self, image_embeds):
+        """Process input data through the model"""
+
         embeds = image_embeds
         clip_extra_context_tokens = self.proj(embeds).reshape(
             -1, self.clip_extra_context_tokens, self.cross_attention_dim
@@ -48,21 +50,23 @@ class MLPProjModel(torch.nn.Module):
     """SD model with image prompt"""
     def __init__(self, cross_attention_dim=1024, clip_embeddings_dim=1024):
         super().__init__()
-        
+
         self.proj = torch.nn.Sequential(
             torch.nn.Linear(clip_embeddings_dim, clip_embeddings_dim),
             torch.nn.GELU(),
             torch.nn.Linear(clip_embeddings_dim, cross_attention_dim),
             torch.nn.LayerNorm(cross_attention_dim)
         )
-        
+
     def forward(self, image_embeds):
+        """Process input data through the model"""
+
         clip_extra_context_tokens = self.proj(image_embeds)
         return clip_extra_context_tokens
 
 
-class IPAdapter:
-    def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4):
+class IPAdapter:  # pylint: disable=R0902
+    def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4):  # pylint: disable=R0913,R0917
         self.device = device
         self.image_encoder_path = image_encoder_path
         self.ip_ckpt = ip_ckpt
@@ -82,6 +86,8 @@ class IPAdapter:
         self.load_ip_adapter()
 
     def init_proj(self):
+        """Initialize image projection model"""
+
         image_proj_model = ImageProjModel(
             cross_attention_dim=self.pipe.unet.config.cross_attention_dim,
             clip_embeddings_dim=self.image_encoder.config.projection_dim,
@@ -90,9 +96,11 @@ class IPAdapter:
         return image_proj_model
 
     def set_ip_adapter(self):
+        """Insert IP Adapter into StableDiffusion pipeline"""
+
         unet = self.pipe.unet
         attn_procs = {}
-        hidden_size=None
+        hidden_size = None
         for name in unet.attn_processors.keys():
             cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
             if name.startswith("mid_block"):
@@ -121,6 +129,8 @@ class IPAdapter:
                 self.pipe.controlnet.set_attn_processor(CNAttnProcessor(num_tokens=self.num_tokens))
 
     def load_ip_adapter(self):
+        """Load IP-Adapter from checkpoint"""
+
         if os.path.splitext(self.ip_ckpt)[-1] == ".safetensors":
             state_dict = {"image_proj": {}, "ip_adapter": {}}
             with safe_open(self.ip_ckpt, framework="pt", device="cpu") as f:
@@ -137,6 +147,8 @@ class IPAdapter:
 
     @torch.inference_mode()
     def get_image_embeds(self, pil_image=None, clip_image_embeds=None):
+        """Get image embeddings"""
+
         if pil_image is not None:
             if isinstance(pil_image, Image.Image):
                 pil_image = [pil_image]
@@ -149,6 +161,7 @@ class IPAdapter:
         return image_prompt_embeds, uncond_image_prompt_embeds
 
     def set_scale(self, scale):
+        """Set adapter scale factor"""
         for attn_processor in self.pipe.unet.attn_processors.values():
             if isinstance(attn_processor, IPAttnProcessor):
                 attn_processor.scale = scale
@@ -165,7 +178,9 @@ class IPAdapter:
         guidance_scale=7.5,
         num_inference_steps=30,
         **kwargs,
-    ):
+    ):  # pylint: disable=R0913,R0914,R0917
+        """Generate images with IP-Adapter Pipeline"""
+
         self.set_scale(scale)
 
         if pil_image is not None:

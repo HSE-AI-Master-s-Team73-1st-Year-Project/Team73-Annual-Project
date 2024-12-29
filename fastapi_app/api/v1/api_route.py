@@ -9,7 +9,6 @@ import aiofiles
 import torch
 from diffusers import AutoencoderKL, DDIMScheduler, StableDiffusionPipeline
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from ip_adapter import IPAdapter
 from PIL import Image
 from pydantic_models.models import (ChangeAdapterRequest,
                                     ChangeAdapterResponse, ChangeModelRequest,
@@ -18,6 +17,7 @@ from pydantic_models.models import (ChangeAdapterRequest,
                                     ImageGenerationResponse,
                                     LoadAdapterRequest, LoadAdapterResponse,
                                     ModelListResponse, RemoveResponse)
+from ip_adapter import IPAdapter
 
 DEFAULT_CHECKPOINT_PATH = "512_res_model_checkpoint_100"
 PRELOADED_CHECKPOINTS_PATH = "/home/chaichuk/Team73-Annual-Project/checkpoints"
