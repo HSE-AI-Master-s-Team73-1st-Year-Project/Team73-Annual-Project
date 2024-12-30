@@ -1,4 +1,3 @@
-import base64
 import io
 import os
 from contextlib import asynccontextmanager
@@ -8,13 +7,13 @@ from typing import List
 import aiofiles
 import torch
 from diffusers import AutoencoderKL, DDIMScheduler, StableDiffusionPipeline
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
+from starlette.responses import StreamingResponse
 from PIL import Image
 from pydantic_models.models import (ChangeAdapterRequest,
                                     ChangeAdapterResponse, ChangeModelRequest,
                                     ChangeModelResponse,
                                     ImageGenerationRequest,
-                                    ImageGenerationResponse,
                                     LoadAdapterRequest, LoadAdapterResponse,
                                     ModelListResponse, RemoveResponse)
 from ip_adapter import IPAdapter
@@ -101,9 +100,9 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
     del config["pipeline"]
     del config["ip_adapter"]
 
-    for ckpt in config["adapters_list"]:
-        if not ckpt["preloaded"]:
-            os.remove(ckpt["path"])
+    for adapter_id in config["adapters_list"]:
+        if not config["adapters_list"][adapter_id]["preloaded"]:
+            os.remove(config["adapters_list"][adapter_id]["path"])
 
     config.clear()
 
@@ -113,11 +112,11 @@ router = APIRouter(lifespan=lifespan)
 
 @router.post(
     "/generate_images",
-    response_model=ImageGenerationResponse,
     status_code=HTTPStatus.OK,
 )
-async def generate_images(request: ImageGenerationRequest, files: List[UploadFile] = File(...)):
+async def generate_images(request: ImageGenerationRequest = Depends(), files: List[UploadFile] = File(...)):
     """Generate images with IP Adapter"""
+
     if request.device == "cuda" and not config["cuda_available"]:
         raise HTTPException(status_code=422, detail="CUDA is not available")
 
@@ -132,14 +131,14 @@ async def generate_images(request: ImageGenerationRequest, files: List[UploadFil
 
     for file in files:
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
+        image = Image.open(io.BytesIO(contents)).convert('RGB').resize((512, 512))
         image_prompts.append(image)
 
     try:
         generated_images = config["ip_adapter"].generate(
-            pil_image=request.images,
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt,
+            pil_image=image_prompts,
+            prompt=request.prompt if len(request.prompt) > 1 else request.prompt[0],
+            negative_prompt=request.negative_prompt if len(request.negative_prompt) > 1 else request.negative_prompt[0],
             num_samples=request.num_samples,
             height=request.height,
             width=request.width,
@@ -149,17 +148,19 @@ async def generate_images(request: ImageGenerationRequest, files: List[UploadFil
             seed=request.random_seed,
         )
 
-        generated_images_bytes = []
+        async def image_stream():
+            for image in generated_images:
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                buffered.seek(0)
 
-        for image in generated_images:
-            buffered = io.BytesIO()
-            image.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            generated_images_bytes.append(img_str)
+                yield buffered.getvalue()
+                yield b"--image--"
+
+        return StreamingResponse(image_stream(), media_type="image/png")
 
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    return ImageGenerationResponse(message="Images generated successfully", generated_images=generated_images_bytes)
 
 
 @router.post("/change_model", response_model=ChangeModelResponse, status_code=HTTPStatus.OK)
@@ -167,7 +168,7 @@ async def change_model(request: ChangeModelRequest):
     """Change StableDiffusion model type from anime to standard or vice versa"""
 
     if request.model_type == config["sd_version"]:
-        return [ChangeModelResponse(message=f"Model type is already {request.model_type}")]
+        return ChangeModelResponse(message=f"Model type is already {request.model_type}")
 
     try:
         config["pipeline"] = StableDiffusionPipeline.from_pretrained(
@@ -200,7 +201,7 @@ async def change_adapter(request: ChangeAdapterRequest):
         raise HTTPException(status_code=422, detail=f"IP Adapter {request.id} not found")
 
     if request.id == config["current_adapter"]:
-        return [ChangeAdapterResponse(message=f"IP Adapter {request.id} is already in use")]
+        return ChangeAdapterResponse(message=f"IP Adapter {request.id} is already in use")
 
     try:
         config["ip_adapter"] = IPAdapter(
@@ -216,13 +217,13 @@ async def change_adapter(request: ChangeAdapterRequest):
 
 
 @router.post("/load_new_adapter_checkpoint", response_model=LoadAdapterResponse, status_code=HTTPStatus.OK)
-async def load_new_adapter_checkpoint(request: LoadAdapterRequest, file: UploadFile = File(...)):
+async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file: UploadFile = File(...)):
     """Change IP Adapter checkpoint used in model"""
 
-    if request.id in config["adapters_list"]:
-        raise HTTPException(status_code=422, detail=f"IP Adapter {request.id} is already exists")
+    if data.id in config["adapters_list"]:
+        raise HTTPException(status_code=422, detail=f"IP Adapter {data.id} is already exists")
 
-    file_save_path = f"{TEMPORARY_CHECKPOINTS_PATH}/{request.id}.bin"
+    file_save_path = f"{TEMPORARY_CHECKPOINTS_PATH}/{data.id}.bin"
 
     try:
         async with aiofiles.open(file_save_path, "wb") as out_file:
@@ -231,13 +232,13 @@ async def load_new_adapter_checkpoint(request: LoadAdapterRequest, file: UploadF
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    config["adapters_list"][request.id] = {
-        "description": request.description if request.description is not None else f"{request.id} checkpoint",
+    config["adapters_list"][data.id] = {
+        "description": data.description if data.description is not None else f"{data.id} checkpoint",
         "path": file_save_path,
         "preloaded": False,
     }
 
-    return ChangeAdapterResponse(message=f"IP Adapter {request.id} loaded successfully")
+    return ChangeAdapterResponse(message=f"IP Adapter {data.id} loaded successfully")
 
 
 @router.get("/get_adapters_list", response_model=ModelListResponse, status_code=HTTPStatus.OK)

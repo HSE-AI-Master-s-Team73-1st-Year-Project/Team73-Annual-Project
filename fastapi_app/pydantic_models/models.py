@@ -13,17 +13,12 @@ class ImageGenerationRequest(BaseModel):
     negative_prompt: Optional[list[str]] = None
     scale: float = 0.6
     num_samples: int = 1
-    random_seed: int
+    random_seed: int = 42
     guidance_scale: float = 7.5
     height: int = 512
     width: int = 512
-    num_inference_steps: int = 30
-    device: DeviceType = "cpu"
-
-
-class ImageGenerationResponse(BaseModel):
-    message: str
-    generated_images: list[str]
+    num_inference_steps: int = 50
+    device: DeviceType = "cuda"
 
 
 class LoadAdapterRequest(BaseModel):
