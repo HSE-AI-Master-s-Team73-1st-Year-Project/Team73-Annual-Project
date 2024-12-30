@@ -14,7 +14,7 @@ def run_async(coroutine):
     return loop.run_until_complete(coroutine)
 
 
-# Сетап логгера для записи в logs/
+# Сетап логгера для записи в logs/ (возможно переместить позже в отдельный файл)
 def setup_logger(name, log_file, level=logging.INFO):
     os.makedirs("logs", exist_ok=True)
 
@@ -38,6 +38,7 @@ logger.info("Application started")
 logger.debug("This is a debug message")
 logger.warning("This is a warning")
 
+# GET список моделей
 model_list = run_async(get_models_list())
 st.session_state.current_model = model_list.json().get("id")[0] # присваивает аниме вариант по стандарту
 
@@ -53,74 +54,73 @@ if selected_model != st.session_state.current_model:
     if st.button("Change Model"):
         with st.spinner("Changing model..."):
             result = change_model(selected_model)
-        st.success(result)
         logger.info(f"Model successfully changed to {selected_model}")
+        st.success(result)
 else:
     logger.info(f"The {selected_model} model is already selected.")
 
-adapter_list = get_adapters_list()
-st.session_state.current_adapter = adapter_list.json().get("id")[0]
+# GET список адаптеров
+adapter_list = run_async(get_adapters_list())
+
+# Проверка на адаптеры
+if adapter_list:
+    st.subheader("Available Adapters")
+    for adapter in adapter_list:
+        st.write(f"ID: {adapter['id']}, Description: {adapter.get('description', None)}")
+else:
+    logger.info("No adapters available!")
+    st.warning("No adapters available, please upload at least one.")
 
 # Загрузка нового чекпоинта адаптера
-uploaded_adapter = st.file_uploader("Upload ip adapter (.bin)", type=["bin"])
-id_input = st.text_input("Enter adapter ID")
-description_input = st.text_area("Enter description (optional)")
-adapter_list.append(id_input)
+st.subheader("Load New Adapter")
+new_adapter_file = st.file_uploader("Upload Adapter Checkpoint (.bin)", type=["bin"])
+new_adapter_id = st.text_input("New Adapter ID")
+new_adapter_description = st.text_input("New Adapter Description (optional)")
 
 # Кнопка загрузки чекпоинта
-if st.button("Load checkpoint"):
-    if uploaded_adapter and id_input:
-        files = {"file": (uploaded_adapter.name, uploaded_adapter, uploaded_adapter.type)}
-        data = {
-            "id": id_input,
-            "description": description_input
-        }
-
-        response = requests.post("http://localhost:8000/load_new_adapter_checkpoint", data=data, files=files)
-
-        if response.status_code == 200:
-            st.success(response.json()["message"])
-        else:
-            logger.warning(f"Error: {response.text}")
+if st.button("Load New Adapter"):
+    if new_adapter_file and new_adapter_id:
+        file_bytes = io.BytesIO(new_adapter_file.read())
+        result = run_async(load_new_adapter_checkpoint(file_bytes, new_adapter_id, new_adapter_description))
+        logger.info(f"Loaded adapter with id: {new_adapter_id}")
+        st.success(f"Adapter loaded: {result['message']}")
     else:
-        st.warning("Please fill in all required fields.")
+        logger.info("")
+        st.error("Please provide both a file and an ID for the new adapter.")
 
-# Selectbox for choosing an adapter based on its ID
+# Кнопка замены адаптера
+st.subheader("Change Active Adapter")
 if adapter_list:
-    selected_adapter_id = st.selectbox(
-        "Select Adapter ID",
-        [(adapter["id"], f"{adapter['id']} - {adapter['description']}") for adapter in adapter_list]
-    )
-
+    selected_adapter = st.selectbox("Select Adapter to Use", options=[adapter['id'] for adapter in adapter_list])
     if st.button("Change Adapter"):
-        if selected_adapter_id:
-            response = requests.post("http://localhost:8000/change_adapter", data={"id": selected_adapter_id})
-
-            if response.status_code == 200:
-                st.success(response.json()["message"])
-            else:
-                st.error(f"Error: {response.text}")
-        else:
-            st.warning("Please select an adapter ID.")
+        result = run_async(change_adapter(selected_adapter))
+        logger.info(f"Adapter changed to: {selected_adapter}")
+        st.success(f"Adapter changed: {result['message']}")
 else:
-    st.warning("No adapters available.")
+    logger.info("No adapters available to change!")
+    st.warning("No adapters available to change.")
 
-selected_adapter_id = st.selectbox("Select Adapter ID", adapter_list)
+# Кнопка удаления адаптера
+st.subheader("Remove Adapter")
+if adapter_list:
+    adapter_to_remove = st.selectbox("Select Adapter to Remove", options=[adapter['id'] for adapter in adapter_list])
+    if st.button("Remove Selected Adapter"):
+        result = run_async(remove(adapter_to_remove))
+        logger.info(f"Adapter removed: {adapter_to_remove}")
+        st.success(f"Adapter removed: {result['message']}")
+else:
+    logger.info("No adapters available to remove!")
+    st.warning("No adapters available to remove.")
 
-if st.button("Change Adapter"):
-    if selected_adapter_id:
-        # Make a POST request to the FastAPI endpoint
-        response = requests.post("http://localhost:8000/change_adapter", data={"id": selected_adapter_id})
+# Кнопка удаления всех адаптеров
+st.subheader("Remove All Adapters")
+if st.button("Remove All Adapters"):
+    result = run_async(remove_all())
+    logger.info("All adapters removed!")
+    st.success(f"All adapters removed: {result['message']}")
 
-        # Handle the response from FastAPI
-        if response.status_code == 200:
-            st.success(response.json()["message"])
-        else:
-            st.error(f"Error: {response.text}")
-    else:
-        st.warning("Please select an adapter ID.")
-
-with st.expander("Input images and parameters"):
+# Кнопка загрузки и генерации изображений
+with st.expander("Input Images and Parameters"):
     uploaded_files = st.file_uploader("Upload Image Files", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
     params = {}
@@ -144,6 +144,6 @@ with st.expander("Input images and parameters"):
             for i, img in enumerate(generated_images):
                 st.image(img, caption=f"Generated Image {i + 1}", use_column_width=True)
         else:
-            logger.warning("No images uploaded!")
+            logger.info("No images uploaded!")
             st.warning("Please upload at least one image.")
 
