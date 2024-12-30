@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
-from api.v1.api_route import router
+from api.v1.api_route import router, logger
 
 app = FastAPI(
     title="ip_adapter_inference",
@@ -21,6 +21,7 @@ class StatusResponse(BaseModel):
 @app.get("/")
 async def root():
     """app root function"""
+    logger.info('ROOT. Request. App healthy.')
     return StatusResponse(status="App healthy")
 
 
