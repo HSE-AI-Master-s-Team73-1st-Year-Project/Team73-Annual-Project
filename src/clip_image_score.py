@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Sequence, Union, TYPE_CHECKING
+from typing import Any, List, Union, TYPE_CHECKING
 
 import torch
 from torch import Tensor
@@ -6,34 +6,17 @@ from typing_extensions import Literal
 
 from torchmetrics import Metric
 from torchmetrics.functional.multimodal.clip_score import _get_clip_model_and_processor
-from torchmetrics.utilities.checks import _SKIP_SLOW_DOCTEST, _try_proceed_with_timeout
 from torchmetrics.utilities.imports import _TRANSFORMERS_GREATER_EQUAL_4_10
 
 if TYPE_CHECKING and _TRANSFORMERS_GREATER_EQUAL_4_10:
-    from transformers import CLIPModel as _CLIPModel
-    from transformers import CLIPProcessor as _CLIPProcessor
-
-if _SKIP_SLOW_DOCTEST and _TRANSFORMERS_GREATER_EQUAL_4_10:
-    from transformers import CLIPModel as _CLIPModel
-    from transformers import CLIPProcessor as _CLIPProcessor
-
-    def _download_clip_for_clip_score() -> None:
-        _CLIPModel.from_pretrained("openai/clip-vit-large-patch14", resume_download=True)
-        _CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", resume_download=True)
-
-    if not _try_proceed_with_timeout(_download_clip_for_clip_score):
-        __doctest_skip__ = ["clip_score"]
-else:
-    __doctest_skip__ = ["clip_score"]
-    _CLIPModel = None
-    _CLIPProcessor = None
+    from transformers import CLIPModel, CLIPProcessor
 
 
 def _clip_image_score_update(
     real_images: Union[Tensor, List[Tensor]],
     fake_images: Union[Tensor, List[Tensor]],
-    model: _CLIPModel,
-    processor: _CLIPProcessor,
+    model: CLIPModel,  # pylint: disable=E0606
+    processor: CLIPProcessor,  # pylint: disable=E0606
 ) -> tuple[Tensor, int]:
     if not isinstance(real_images, list):
         if real_images.ndim == 3:
@@ -50,10 +33,8 @@ def _clip_image_score_update(
         raise ValueError("Expected all images to be 3d but found image that has either more or less")
 
     if len(fake_images) != len(real_images):
-        raise ValueError(
-            f"Expected the number of images and text examples to be the same but got {len(real_images)} and {len(text)}"
-        )
-    
+        raise ValueError(f"Expected the sizes to be the same but got {len(real_images)} and {len(fake_images)}")
+
     device = real_images[0].device
     processed_input_real = processor(images=[i.cpu() for i in real_images], return_tensors="pt", padding=True)
     processed_input_fake = processor(images=[i.cpu() for i in fake_images], return_tensors="pt", padding=True)
@@ -93,11 +74,19 @@ class CLIPImageScore(Metric):
         self.model, self.processor = _get_clip_model_and_processor(model_name_or_path)
         self.add_state("score", torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_samples", torch.tensor(0, dtype=torch.long), dist_reduce_fx="sum")
+        self.score = None
+        self.n_samples = None
 
-    def update(self, real_images: Union[Tensor, List[Tensor]], fake_images: Union[Tensor, List[Tensor]]) -> None:
+    def update(
+        self, real_images: Union[Tensor, List[Tensor]], fake_images: Union[Tensor, List[Tensor]]
+    ):  # pylint: disable=W0221
         score, n_samples = _clip_image_score_update(real_images, fake_images, self.model, self.processor)
-        self.score += score.sum(0)
-        self.n_samples += n_samples
+        if self.score is None:
+            self.score = score.sum(0)
+            self.n_samples = n_samples
+        else:
+            self.score += score.sum(0)
+            self.n_samples += n_samples
 
     def compute(self) -> Tensor:
         """Compute accumulated clip score."""

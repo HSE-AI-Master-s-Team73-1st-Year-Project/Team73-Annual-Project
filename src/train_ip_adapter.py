@@ -1,39 +1,34 @@
-import os
-import random
 import argparse
-from pathlib import Path
-import json
-import itertools
-import time
-import math
-import wandb
 import gc
+import itertools
+import math
+import os
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from torchvision import transforms
-from PIL import Image
-from transformers import CLIPImageProcessor
+import wandb
 from accelerate import Accelerator
-from accelerate.logging import get_logger
-from accelerate.utils import ProjectConfiguration
-from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel, StableDiffusionPipeline
-from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
-from tqdm import tqdm
-
-from ip_adapter.ip_adapter import ImageProjModel, IPAdapter
-from ip_adapter.utils import is_torch2_available
-if is_torch2_available():
-    from ip_adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
-else:
-    from ip_adapter.attention_processor import IPAttnProcessor, AttnProcessor
-from dataset import MyDataset, collate_fn
-from accelerate.utils import set_seed
+from accelerate.utils import ProjectConfiguration, set_seed
+from diffusers import (AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel)
 from PIL import Image
-    
+from tqdm import tqdm
+from transformers import (CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection)
+
+from ip_adapter.ip_adapter import (ImageProjModel, IPAdapter)
+from ip_adapter.utils import is_torch2_available
+from .dataset import MyDataset, collate_fn
+
+if is_torch2_available():
+    from ip_adapter.attention_processor import (AttnProcessor2_0 as AttnProcessor,
+                                                IPAttnProcessor2_0 as IPAttnProcessor)
+else:
+    from ip_adapter.attention_processor import (IPAttnProcessor, AttnProcessor)
+
 
 class IPAdapterModule(torch.nn.Module):
     """IP-Adapter"""
+
     def __init__(self, unet, image_proj_model, adapter_modules, ckpt_path=None):
         super().__init__()
         self.unet = unet
@@ -44,6 +39,8 @@ class IPAdapterModule(torch.nn.Module):
             self.load_from_checkpoint(ckpt_path)
 
     def forward(self, noisy_latents, timesteps, encoder_hidden_states, image_embeds):
+        """Process input data through the model"""
+
         ip_tokens = self.image_proj_model(image_embeds)
         encoder_hidden_states = torch.cat([encoder_hidden_states, ip_tokens], dim=1)
         # Predict the noise residual
@@ -51,6 +48,8 @@ class IPAdapterModule(torch.nn.Module):
         return noise_pred
 
     def load_from_checkpoint(self, ckpt_path: str):
+        """Load IP-Adapter from checkpoint"""
+
         # Calculate original checksums
         orig_ip_proj_sum = torch.sum(torch.stack([torch.sum(p) for p in self.image_proj_model.parameters()]))
         orig_adapter_sum = torch.sum(torch.stack([torch.sum(p) for p in self.adapter_modules.parameters()]))
@@ -73,25 +72,30 @@ class IPAdapterModule(torch.nn.Module):
 
 
 def image_grid(imgs, rows, cols):
-    assert len(imgs) == rows*cols
+    """Display multiple images as grid of size (rows, cols)"""
+
+    assert len(imgs) == rows * cols
 
     w, h = imgs[0].size
-    grid = Image.new('RGB', size=(cols*w, rows*h))
-    grid_w, grid_h = grid.size
-    
+    grid = Image.new("RGB", size=(cols * w, rows * h))
+
     for i, img in enumerate(imgs):
-        grid.paste(img, box=(i%cols*w, i//cols*h))
+        grid.paste(img, box=(i % cols * w, i // cols * h))
     return grid
+
 
 def free_memory():
     """Runs garbage collection. Then clears the cache of the available accelerator."""
+
     gc.collect()
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    
+
 def parse_args():
+    """Parse console arguments"""
+
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
     parser.add_argument(
         "--pretrained_model_name_or_path",
@@ -146,9 +150,7 @@ def parse_args():
         "--resolution",
         type=int,
         default=512,
-        help=(
-            "The resolution for input images"
-        ),
+        help=("The resolution for input images"),
     )
     parser.add_argument(
         "--learning_rate",
@@ -173,17 +175,13 @@ def parse_args():
         "--save_steps",
         type=int,
         default=-1,
-        help=(
-            "Save a checkpoint of the training state every X updates"
-        ),
+        help=("Save a checkpoint of the training state every X updates"),
     )
     parser.add_argument(
         "--save_epochs",
         type=int,
         default=10,
-        help=(
-            "Save a checkpoint of the training state every X epochs"
-        ),
+        help=("Save a checkpoint of the training state every X epochs"),
     )
     parser.add_argument(
         "--mixed_precision",
@@ -221,27 +219,18 @@ def parse_args():
         default="",
     )
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
-    
+
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
-    if env_local_rank != -1 and env_local_rank != args.local_rank:
+    if env_local_rank not in [-1, args.local_rank]:
         args.local_rank = env_local_rank
 
     return args
 
 
 def save_ip_adapter(args, accelerator, checkpoint_name):
-    # save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-    # model = accelerator.unwrap_model(ip_adapter)
+    """Save IP-Adapter checkpoint"""
 
-    # # Словарное включение для извлечения нужных параметров
-    # image_proj_sd = {k.replace("image_proj_model.", ""): v for k, v in model.state_dict().items() if k.startswith("image_proj_model")}
-    # ip_sd = {k.replace("adapter_modules.", ""): v for k, v in model.state_dict().items() if k.startswith("adapter_modules")}
-    # os.makedirs(save_path, exist_ok=True)
-    # # Сохранение отфильтрованных состояний
-    # print('!!!!!!!!!!!!!!!!!', model.image_proj_model.device)
-    # torch.save({"image_proj": image_proj_sd, "ip_adapter": ip_sd}, os.path.join(save_path, "ip_adapter.bin"))
-    
     save_path = os.path.join(args.output_dir, checkpoint_name)
     accelerator.save_state(save_path, safe_serialization=False)
 
@@ -263,30 +252,35 @@ def save_ip_adapter(args, accelerator, checkpoint_name):
     del sd, image_proj_sd, ip_sd
 
 
-def training_epoch(args,
-                   accelerator,
-                   vae,
-                   ip_adapter,
-                   image_encoder,
-                   text_encoder,
-                   noise_scheduler,
-                   optimizer,
-                   train_dataloader,
-                   weight_dtype,
-                   progress_bar,
-                   global_step):
-    
+def training_epoch(
+    args,
+    accelerator,
+    vae,
+    ip_adapter,
+    image_encoder,
+    text_encoder,
+    noise_scheduler,
+    optimizer,
+    train_dataloader,
+    weight_dtype,
+    progress_bar,
+    global_step,
+):  # pylint: disable=R0913,R0914,R0917
+    """IP-Adapter one training epoch"""
+
     train_epoch_loss = 0.0
     train_epoch_batch_sum = 0.0
-        
-    for step, batch in enumerate(train_dataloader):
+
+    for train_batch in enumerate(train_dataloader):
 
         train_step_loss = 0.0
 
         with accelerator.accumulate(ip_adapter):
             # Convert images to latent space
             with torch.no_grad():
-                latents = vae.encode(batch["images"].to(accelerator.device, dtype=weight_dtype)).latent_dist.sample()
+                latents = vae.encode(
+                    train_batch["images"].to(accelerator.device, dtype=weight_dtype)
+                ).latent_dist.sample()
                 latents = latents * vae.config.scaling_factor
 
             # Sample noise that we'll add to the latents
@@ -299,11 +293,13 @@ def training_epoch(args,
             # Add noise to the latents according to the noise magnitude at each timestep
             # (this is the forward diffusion process)
             noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
-        
+
             with torch.no_grad():
-                image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).image_embeds
+                image_embeds = image_encoder(
+                    train_batch["clip_images"].to(accelerator.device, dtype=weight_dtype)
+                ).image_embeds
             image_embeds_ = []
-            for image_embed, drop_image_embed in zip(image_embeds, batch["drop_image_embeds"]):
+            for image_embed, drop_image_embed in zip(image_embeds, train_batch["drop_image_embeds"]):
                 if drop_image_embed == 1:
                     image_embeds_.append(torch.zeros_like(image_embed))
                 else:
@@ -311,12 +307,12 @@ def training_epoch(args,
             image_embeds = torch.stack(image_embeds_)
 
             with torch.no_grad():
-                encoder_hidden_states = text_encoder(batch["text_input_ids"].to(accelerator.device))[0]
-            
+                encoder_hidden_states = text_encoder(train_batch["text_input_ids"].to(accelerator.device))[0]
+
             noise_pred = ip_adapter(noisy_latents, timesteps, encoder_hidden_states, image_embeds)
-    
+
             loss = F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
-        
+
             # Gather the losses across all processes for logging (if we use distributed training).
             avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
 
@@ -325,7 +321,7 @@ def training_epoch(args,
 
             train_epoch_loss += train_step_loss * args.train_batch_size
             train_epoch_batch_sum += args.train_batch_size
-            
+
             # Backpropagate
             accelerator.backward(loss)
             optimizer.step()
@@ -337,11 +333,12 @@ def training_epoch(args,
             global_step += 1
             logs = {"step_loss": train_step_loss}
             progress_bar.set_postfix(**logs)
-    
-    return train_epoch_loss / train_epoch_batch_sum, global_step
-    
 
-def main():
+    return train_epoch_loss / train_epoch_batch_sum, global_step
+
+
+def main():  # pylint: disable=R0912,R0914,R0915
+    """Main function for training process"""
     args = parse_args()
     logging_dir = Path(args.output_dir, args.logging_dir)
 
@@ -354,7 +351,7 @@ def main():
     )
 
     set_seed(2204)
-    
+
     if accelerator.is_main_process:
         if args.output_dir is not None:
             os.makedirs(args.output_dir, exist_ok=True)
@@ -371,8 +368,8 @@ def main():
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
     image_encoder.requires_grad_(False)
-    
-    #ip-adapter
+
+    # ip-adapter
     image_proj_model = ImageProjModel(
         cross_attention_dim=unet.config.cross_attention_dim,
         clip_embeddings_dim=image_encoder.config.projection_dim,
@@ -381,6 +378,7 @@ def main():
     # init adapter modules
     attn_procs = {}
     unet_sd = unet.state_dict()
+    hidden_size = None
     for name in unet.attn_processors.keys():
         cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
         if name.startswith("mid_block"):
@@ -403,25 +401,27 @@ def main():
             attn_procs[name].load_state_dict(weights)
     unet.set_attn_processor(attn_procs)
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
-    
+
     ip_adapter = IPAdapterModule(unet, image_proj_model, adapter_modules, args.pretrained_ip_adapter_path)
-    
+
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
         weight_dtype = torch.float16
     elif accelerator.mixed_precision == "bf16":
         weight_dtype = torch.bfloat16
-    #unet.to(accelerator.device, dtype=weight_dtype)
+    # unet.to(accelerator.device, dtype=weight_dtype)
     vae.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
     image_encoder.to(accelerator.device, dtype=weight_dtype)
-    
+
     # optimizer
-    params_to_opt = itertools.chain(ip_adapter.image_proj_model.parameters(),  ip_adapter.adapter_modules.parameters())
+    params_to_opt = itertools.chain(ip_adapter.image_proj_model.parameters(), ip_adapter.adapter_modules.parameters())
     optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
-    
+
     # dataloader
-    train_dataset = MyDataset(args.data_csv_file, tokenizer=tokenizer, size=args.resolution, image_root_path=args.data_root_path)
+    train_dataset = MyDataset(
+        args.data_csv_file, tokenizer=tokenizer, size=args.resolution, image_root_path=args.data_root_path
+    )
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -431,14 +431,16 @@ def main():
     )
 
     if accelerator.is_main_process:
-        accelerator.init_trackers(args.wandb_project_name, config=args, init_kwargs={"wandb": {"name": args.wandb_run_name}})
-    
+        accelerator.init_trackers(
+            args.wandb_project_name, config=args, init_kwargs={"wandb": {"name": args.wandb_run_name}}
+        )
+
     # Prepare everything with our `accelerator`.
     ip_adapter, optimizer, train_dataloader = accelerator.prepare(ip_adapter, optimizer, train_dataloader)
 
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / 1)
     max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-    
+
     global_step = 0
     initial_global_step = 0
 
@@ -446,35 +448,69 @@ def main():
         range(0, max_train_steps),
         initial=initial_global_step,
         desc="Steps",
-        disable=not accelerator.is_local_main_process
+        disable=not accelerator.is_local_main_process,
     )
 
     global_step = 0
     for epoch in range(0, args.num_train_epochs):
-        train_loss, global_step = training_epoch(args, accelerator, vae, ip_adapter, image_encoder, text_encoder, noise_scheduler, 
-                                                 optimizer, train_dataloader, weight_dtype, progress_bar, global_step)
+        train_loss, global_step = training_epoch(
+            args,
+            accelerator,
+            vae,
+            ip_adapter,
+            image_encoder,
+            text_encoder,
+            noise_scheduler,
+            optimizer,
+            train_dataloader,
+            weight_dtype,
+            progress_bar,
+            global_step,
+        )
         accelerator.log({"Train Loss": train_loss}, step=epoch + 1)
-        
+
         if accelerator.is_main_process:
-            if epoch == 0 or ((epoch + 1) % args.save_epochs == 0) or (epoch == args.num_train_epochs - 1) or (args.save_steps != -1 and global_step % args.save_steps == 0): 
+            if (
+                epoch == 0
+                or ((epoch + 1) % args.save_epochs == 0)
+                or (epoch == args.num_train_epochs - 1)
+                or (args.save_steps != -1 and global_step % args.save_steps == 0)
+            ):
                 checkpoint_name = f"checkpoint-{epoch + 1}"
                 save_ip_adapter(args, accelerator, checkpoint_name=checkpoint_name)
 
                 checkpoint_path = os.path.join(args.output_dir, checkpoint_name, "ip_adapter.bin")
-                    
+
                 pipeline = StableDiffusionPipeline.from_pretrained(
-                        "stable-diffusion-v1-5/stable-diffusion-v1-5",
-                        torch_dtype=torch.float16,
-                        feature_extractor=None,
-                        safety_checker=None
-                    )
+                    "stable-diffusion-v1-5/stable-diffusion-v1-5",
+                    torch_dtype=torch.float16,
+                    feature_extractor=None,
+                    safety_checker=None,
+                )
                 pipeline.set_progress_bar_config(disable=True)
                 ip_model = IPAdapter(pipeline, args.image_encoder_path, checkpoint_path, accelerator.device)
                 prompt_image = Image.open("/home/chaichuk/IP-Adapter-repo/assets/images/ai_face.png")
-                images = ip_model.generate(pil_image=prompt_image, num_samples=6, num_inference_steps=50, scale=1.0, height=args.resolution, width=args.resolution)
-                anime_images = ip_model.generate(pil_image=prompt_image, num_samples=6, prompt=['anime style'], num_inference_steps=50, scale=0.7, height=args.resolution, width=args.resolution)
-                log_dict = {"Image Validation": wandb.Image(image_grid(images, 2, 3), caption="Ai face"),
-                            "Anime Image Validation": wandb.Image(image_grid(anime_images, 2, 3), caption="Anime Ai face")}
+                images = ip_model.generate(
+                    pil_image=prompt_image,
+                    num_samples=6,
+                    num_inference_steps=50,
+                    scale=1.0,
+                    height=args.resolution,
+                    width=args.resolution,
+                )
+                anime_images = ip_model.generate(
+                    pil_image=prompt_image,
+                    num_samples=6,
+                    prompt=["anime style"],
+                    num_inference_steps=50,
+                    scale=0.7,
+                    height=args.resolution,
+                    width=args.resolution,
+                )
+                log_dict = {
+                    "Image Validation": wandb.Image(image_grid(images, 2, 3), caption="Ai face"),
+                    "Anime Image Validation": wandb.Image(image_grid(anime_images, 2, 3), caption="Anime Ai face"),
+                }
 
                 for tracker in accelerator.trackers:
                     if tracker.name == "wandb":
@@ -483,6 +519,6 @@ def main():
                 del pipeline, ip_model
                 free_memory()
 
-                
+
 if __name__ == "__main__":
-    main()    
+    main()
