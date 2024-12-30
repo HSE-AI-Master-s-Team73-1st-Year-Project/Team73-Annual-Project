@@ -21,4 +21,4 @@
 - Файл checkpoints.md — описание чекпоинтов
 - Файл datset.md — информация об используемых данных
 - Файл EDA.md — общее описание проведенного EDA
-- create_celeba_blip_captions.py и create_caption.py — скрипты для создания описаний к изображениям из датасета
+- data_analysis/create_celeba_blip_captions.py и data_analysis/create_caption.py — скрипты для создания описаний к изображениям из датасета
