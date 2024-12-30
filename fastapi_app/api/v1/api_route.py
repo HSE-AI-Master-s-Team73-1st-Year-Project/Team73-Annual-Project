@@ -4,6 +4,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from typing import List
 import aiofiles
@@ -28,7 +29,17 @@ VAE_MODEL_PATH = "stabilityai/sd-vae-ft-mse"
 SD_STANDARD_MODEL_PATH = "stable-diffusion-v1-5/stable-diffusion-v1-5"
 SD_ANIME_MODEL_PATH = "dreamlike-art/dreamlike-anime-1.0"
 
-LOG_DIR = "/home/chaichuk/Team73-Annual-Project/logs"
+LOG_DIR = "/home/chaichuk/Team73-Annual-Project/fastapi_app/logs"
+
+
+class AsyncHandler(logging.Handler):
+    def __init__(self, handler):
+        super().__init__()
+        self.handler = handler
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
+    def emit(self, record):
+        self.executor.submit(self.handler.emit, record)
 
 
 logger = logging.getLogger("fastapi_logger")
@@ -36,12 +47,13 @@ logger.setLevel(logging.DEBUG)
 
 os.makedirs(LOG_DIR, exist_ok=True)
 log_file = os.path.join(LOG_DIR, "fastapi_app.log")
-log_handler = RotatingFileHandler(log_file, maxBytes=32 * 1024 * 1024, backupCount=5)
+rotating_handler = RotatingFileHandler(log_file, maxBytes=32 * 1024 * 1024, backupCount=5)
 
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-log_handler.setFormatter(formatter)
+rotating_handler.setFormatter(formatter)
 
-logger.addHandler(log_handler)
+async_handler = AsyncHandler(rotating_handler)
+logger.addHandler(async_handler)
 
 
 config = {
@@ -126,6 +138,7 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
 
     config.clear()
     logger.info("Application stopped.")
+    logger.handlers.clear()
 
 
 router = APIRouter(lifespan=lifespan)
@@ -136,7 +149,7 @@ router = APIRouter(lifespan=lifespan)
     status_code=HTTPStatus.OK,
 )
 async def generate_images(request: ImageGenerationRequest = Depends(), files: List[UploadFile] = File(...)):
-    """Generate images with IP Adapter"""
+    """Generate images with IP-Adapter"""
 
     logger.info("GENERATE_IMAGES. Request.")
     logger.debug("GENERATE_IMAGES. Request with params: %s.", request)
@@ -242,7 +255,7 @@ async def change_model(request: ChangeModelRequest):
 
 @router.post("/change_adapter", response_model=ChangeAdapterResponse, status_code=HTTPStatus.OK)
 async def change_adapter(request: ChangeAdapterRequest):
-    """Change IP Adapter checkpoint used in model"""
+    """Change IP-Adapter checkpoint used in model"""
 
     logger.info("CHANGE_ADAPTER. Request.")
     logger.debug("CHANGE_ADAPTER. Request with params: %s", request)
@@ -274,7 +287,7 @@ async def change_adapter(request: ChangeAdapterRequest):
 
 @router.post("/load_new_adapter_checkpoint", response_model=LoadAdapterResponse, status_code=HTTPStatus.OK)
 async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file: UploadFile = File(...)):
-    """Change IP Adapter checkpoint used in model"""
+    """Change IP-Adapter checkpoint used in model"""
 
     logger.info("LOAD_NEW_ADAPTER_CHECKPOINT. Request.")
     logger.debug("LOAD_NEW_ADAPTER_CHECKPOINT. Request with params: %s.", data)
@@ -306,7 +319,7 @@ async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file
 
 @router.get("/get_adapters_list", response_model=ModelListResponse, status_code=HTTPStatus.OK)
 async def get_adapters_list():
-    """Get list of all available for inference IP Adapters"""
+    """Get list of all available for inference IP-Adapters"""
 
     logger.info("GET_ADAPTERS_LIST. Request.")
     adapters_list = [
@@ -330,7 +343,7 @@ async def get_models_list():
 
 @router.delete("/remove_adapter_checkpoint/{model_id}", response_model=RemoveResponse, status_code=HTTPStatus.OK)
 async def remove(model_id: str):
-    """Remove IP Adapter checkpoint with id model_id"""
+    """Remove IP-Adapter checkpoint with id model_id"""
 
     logger.info("REMOVE_ADAPTER_CHECKPOINT. Request.")
     logger.debug("GET_ADAPTERS_LIST. Requestfor id %s.", model_id)
@@ -343,7 +356,7 @@ async def remove(model_id: str):
         raise HTTPException(status_code=422, detail=f"Model '{model_id}' cannot be removed")
 
     logger.info("REMOVE_ADAPTER_CHECKPOINT. Removing adapter %s.", model_id)
-    
+
     os.remove(config["adapters_list"][model_id]["path"])
     del config["adapters_list"][model_id]
 
@@ -368,7 +381,7 @@ async def remove(model_id: str):
 
 @router.delete("/remove_all", response_model=list[RemoveResponse], status_code=HTTPStatus.OK)
 async def remove_all():
-    """Remove all loaded IP Adapter checkpoints"""
+    """Remove all loaded IP-Adapter checkpoints"""
 
     logger.info("REMOVE_ALL. Request.")
     logger.info("REMOVE_ALL. Removing all loaded checkpoints.")
