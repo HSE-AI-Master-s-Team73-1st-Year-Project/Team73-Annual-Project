@@ -1,12 +1,12 @@
 Провели EDA нашего датасета на основе [Multi-Modal-CelebA-HQ](https://github.com/IIGROUP/MM-CelebA-HQ-Dataset) 
 
-Проанализиролвали изображения (ноутбук с анализом [Team73_Masters_DataEDA_images](https://colab.research.google.com/drive/1kYrG3AGvnvQpPZaQHBtO0N8OgOQQixed)):
+Проанализиролвали изображения (ноутбук с анализом [data_analysis/EDA_images.ipynb](https://colab.research.google.com/drive/1kYrG3AGvnvQpPZaQHBtO0N8OgOQQixed)):
 
 - Здесь проводим анализ изображений датасета и убеждаемся, что целостность картинок сохранения и имеет смысл.
 - Средние значения цвета изображения: красный (~105-155), зеленый (~85-130), синий (~75-115).
 - Среднее изображение имеет более женские черты лица, высокая отчетливость глаз.
 
-Проанализировали тексты (ноутбук с анализом [Team73_Masters_DataEDA_text](https://colab.research.google.com/drive/1hldyGz5A0ds5RrcphutTYZzg1jbyzaXc)):
+Проанализировали тексты (ноутбук с анализом [data_analysis/EDA_text](https://colab.research.google.com/drive/1hldyGz5A0ds5RrcphutTYZzg1jbyzaXc)):
 
 - Здесь проводим анализ текстов, таких как описание картинок и признаки черт лиц на картинках датасета. Данный анализ помогает глубже понять с какими данными мы имеем дело.
 - Около две трети признаков в датасете женские.

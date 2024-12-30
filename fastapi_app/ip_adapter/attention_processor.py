@@ -1,19 +1,15 @@
 # modified from https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py
 import torch
-import torch.nn as nn
+from torch import nn
 import torch.nn.functional as F
 
 
-class AttnProcessor(nn.Module):
+class AttnProcessor(nn.Module):  # pylint: disable=W0223
     r"""
     Default processor for performing attention-related computations.
     """
 
-    def __init__(
-        self,
-        hidden_size=None,
-        cross_attention_dim=None,
-    ):
+    def __init__(self):
         super().__init__()
 
     def __call__(
@@ -23,9 +19,7 @@ class AttnProcessor(nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        *args,
-        **kwargs,
-    ):
+    ):  # pylint: disable=R0913,R0914,R0917
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -79,7 +73,7 @@ class AttnProcessor(nn.Module):
         return hidden_states
 
 
-class IPAttnProcessor(nn.Module):
+class IPAttnProcessor(nn.Module):  # pylint: disable=W0223
     r"""
     Attention processor for IP-Adapater.
     Args:
@@ -100,6 +94,7 @@ class IPAttnProcessor(nn.Module):
         self.cross_attention_dim = cross_attention_dim
         self.scale = scale
         self.num_tokens = num_tokens
+        self.attn_map = None
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
@@ -111,9 +106,7 @@ class IPAttnProcessor(nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        *args,
-        **kwargs,
-    ):
+    ):  # pylint: disable=R0913,R0914,R0917
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -134,6 +127,8 @@ class IPAttnProcessor(nn.Module):
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
 
         query = attn.to_q(hidden_states)
+
+        ip_hidden_states = None
 
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
@@ -188,30 +183,19 @@ class IPAttnProcessor(nn.Module):
         return hidden_states
 
 
-class AttnProcessor2_0(torch.nn.Module):
+class AttnProcessor2_0(torch.nn.Module):  # pylint: disable=W0223
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
     """
 
-    def __init__(
-        self,
-        hidden_size=None,
-        cross_attention_dim=None,
-    ):
+    def __init__(self):
         super().__init__()
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
 
     def __call__(
-        self,
-        attn,
-        hidden_states,
-        encoder_hidden_states=None,
-        attention_mask=None,
-        temb=None,
-        *args,
-        **kwargs,
-    ):
+        self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None
+    ):  # pylint: disable=R0913,R0914,R0917
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -255,8 +239,7 @@ class AttnProcessor2_0(torch.nn.Module):
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        hidden_states = F.scaled_dot_product_attention(
+        hidden_states = F.scaled_dot_product_attention(  # pylint: disable=E1102
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
 
@@ -279,7 +262,7 @@ class AttnProcessor2_0(torch.nn.Module):
         return hidden_states
 
 
-class IPAttnProcessor2_0(torch.nn.Module):
+class IPAttnProcessor2_0(torch.nn.Module):  # pylint: disable=W0223
     r"""
     Attention processor for IP-Adapater for PyTorch 2.0.
     Args:
@@ -303,6 +286,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.cross_attention_dim = cross_attention_dim
         self.scale = scale
         self.num_tokens = num_tokens
+        self.attn_map = None
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
@@ -314,9 +298,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        *args,
-        **kwargs,
-    ):
+    ):  # pylint: disable=R0913,R0914,R0917
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -343,6 +325,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         query = attn.to_q(hidden_states)
 
+        ip_hidden_states = None
+
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
         else:
@@ -367,8 +351,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        hidden_states = F.scaled_dot_product_attention(
+        hidden_states = F.scaled_dot_product_attention(  # pylint: disable=E1102
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
 
@@ -383,13 +366,12 @@ class IPAttnProcessor2_0(torch.nn.Module):
         ip_value = ip_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        ip_hidden_states = F.scaled_dot_product_attention(
+        ip_hidden_states = F.scaled_dot_product_attention(  # pylint: disable=E1102
             query, ip_key, ip_value, attn_mask=None, dropout_p=0.0, is_causal=False
         )
         with torch.no_grad():
             self.attn_map = query @ ip_key.transpose(-2, -1).softmax(dim=-1)
-            #print(self.attn_map.shape)
+            # print(self.attn_map.shape)
 
         ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         ip_hidden_states = ip_hidden_states.to(query.dtype)
@@ -412,8 +394,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         return hidden_states
 
 
-## for controlnet
-class CNAttnProcessor:
+# for controlnet
+class CNAttnProcessor:  # pylint: disable=W0223,R0903
     r"""
     Default processor for performing attention-related computations.
     """
@@ -421,7 +403,14 @@ class CNAttnProcessor:
     def __init__(self, num_tokens=4):
         self.num_tokens = num_tokens
 
-    def __call__(self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None, *args, **kwargs,):
+    def __call__(
+        self,
+        attn,
+        hidden_states,
+        encoder_hidden_states=None,
+        attention_mask=None,
+        temb=None,
+    ):  # pylint: disable=R0913,R0914,R0917
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -478,7 +467,7 @@ class CNAttnProcessor:
         return hidden_states
 
 
-class CNAttnProcessor2_0:
+class CNAttnProcessor2_0:  # pylint: disable=W0223,R0903
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
     """
@@ -495,9 +484,7 @@ class CNAttnProcessor2_0:
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        *args,
-        **kwargs,
-    ):
+    ):  # pylint: disable=R0913,R0914,R0917
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -544,8 +531,7 @@ class CNAttnProcessor2_0:
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        hidden_states = F.scaled_dot_product_attention(
+        hidden_states = F.scaled_dot_product_attention(  # pylint: disable=E1102
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
 
