@@ -32,7 +32,7 @@ LOG_DIR = "/home/chaichuk/Team73-Annual-Project/logs"
 
 
 logger = logging.getLogger("fastapi_logger")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 os.makedirs(LOG_DIR, exist_ok=True)
 log_file = os.path.join(LOG_DIR, "fastapi_app.log")
@@ -343,8 +343,9 @@ async def remove(model_id: str):
         raise HTTPException(status_code=422, detail=f"Model '{model_id}' cannot be removed")
 
     logger.info("REMOVE_ADAPTER_CHECKPOINT. Removing adapter %s.", model_id)
-    del config["adapters_list"][model_id]
+    
     os.remove(config["adapters_list"][model_id]["path"])
+    del config["adapters_list"][model_id]
 
     if model_id == config["current_adapter"]:
         logger.info("REMOVE_ADAPTER_CHECKPOINT. Switching to default adapter.")
