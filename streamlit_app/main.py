@@ -1,5 +1,3 @@
-import requests
-import aiohttp
 import asyncio
 import streamlit as st
 import os
