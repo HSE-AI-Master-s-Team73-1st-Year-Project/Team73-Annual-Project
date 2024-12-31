@@ -3,35 +3,44 @@ import aiohttp
 
 from PIL import Image
 
-API_URL = "http://0.0.0.0:8000/api/v1/ip_adapter"
+API_URL = "http://localhost:8000/api/v1/ip_adapter"
+
+
+class RepeatableFormData(aiohttp.FormData):
+    def __call__(self):
+        if self._is_multipart:
+            if self._is_processed:
+                return self._writer
+
+            return self._gen_form_data()
+        return self._gen_form_urlencoded()
 
 
 async def generate_images(
-    image_bytes: list[io.BytesIO], params: dict = None, prompts: list[str] = None, negative_prompts: list[str] = None
+    images, params: dict = None, prompts: list[str] = None, negative_prompts: list[str] = None
 ):
     """Generate images with IP-Adapter"""
     async with aiohttp.ClientSession() as session:
-        data = aiohttp.FormData()
+        form_data = RepeatableFormData()
 
-        for image in image_bytes:
-            data.add_field('files', image, content_type='image/jpeg')
+        for image in images:
+            form_data.add_field('files', image.read(), filename=image.name, content_type=image.type)
 
-        if prompts is None:
-            data.add_field('prompt', '')
-        else:
+        if prompts is not None:
             for prompt in prompts:
-                data.add_field('prompt', prompt)
+                form_data.add_field('prompt', prompt)
 
-        if negative_prompts is None:
-            data.add_field('negative_prompt', '')
-        else:
+        if negative_prompts is not None:
             for prompt in negative_prompts:
-                data.add_field('negative_prompt', prompt)
+                form_data.add_field('negative_prompt', prompt)
 
         if params is None:
             params = {}
 
-        async with session.post(f"{API_URL}/generate_images/", params=params, data=data) as response:
+        async with session.post(f"{API_URL}/generate_images/", params=params, data=form_data) as response:
+            if response.status != 200:
+                result = await response.json()
+                return {'code': response.status, 'result': result}
 
             image_data = b''
             async for data in response.content.iter_any():
@@ -46,19 +55,17 @@ async def generate_images(
                     image = Image.open(io.BytesIO(img_data)).convert('RGB')
                     final_images.append(image)
 
-            return final_images
+            return {'code': 200, 'result': final_images}
 
 
-async def load_new_adapter_checkpoint(file: io.BytesIO, adapter_id: str, description: str =None):
+async def load_new_adapter_checkpoint(file, adapter_id: str, description: str = None):
     """Change IP-Adapter checkpoint used in model"""
-
     async with aiohttp.ClientSession() as session:
-        data = aiohttp.FormData()
-        data.add_field('file', file, content_type='application/octet-stream')
+        form_data = RepeatableFormData()
+        form_data.add_field('file', file.read(), content_type=file.type)
 
         params = {"id": adapter_id, "description": description}
-
-        async with session.post(f"{API_URL}/generate_images/", data, params=params) as response:
+        async with session.post(f"{API_URL}/load_new_adapter_checkpoint/", params=params, data=form_data) as response:
             return await response.json()
 
 
@@ -80,19 +87,27 @@ async def change_model(model_type: str):
             return await response.json()
 
 
-async def get_adapters_list():
+async def get_available_adapter_checkpoints():
     """Get list of all available for inference IP Adapters"""
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/get_adapters_list/") as response:
+        async with session.get(f"{API_URL}/get_available_adapter_checkpoints/") as response:
             return await response.json()
 
 
-async def get_models_list():
+async def get_available_model_types():
     """Get list of all available StableDiffusion types"""
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/get_models_list/") as response:
+        async with session.get(f"{API_URL}/get_available_model_types/") as response:
+            return await response.json()
+
+
+async def get_current_model_type():
+    """Get type of a current StableDiffusion model"""
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/get_current_model_type/") as response:
             return await response.json()
 
 
@@ -100,7 +115,7 @@ async def remove(model_id: str):
     """Remove IP Adapter checkpoint with id model_id"""
 
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f"{API_URL}/remove/{model_id}") as response:
+        async with session.delete(f"{API_URL}/remove_adapter_checkpoint/{model_id}") as response:
             return await response.json()
 
 

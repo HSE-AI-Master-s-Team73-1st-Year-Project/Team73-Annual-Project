@@ -18,7 +18,8 @@ from pydantic_models.models import (ChangeAdapterRequest,
                                     ChangeModelResponse,
                                     ImageGenerationRequest,
                                     LoadAdapterRequest, LoadAdapterResponse,
-                                    ModelListResponse, RemoveResponse)
+                                    ModelListResponse, CurrentModelResponse,
+                                    RemoveResponse)
 from ip_adapter import IPAdapter
 
 DEFAULT_CHECKPOINT_PATH = "512_res_model_checkpoint_100"
@@ -42,18 +43,23 @@ class AsyncHandler(logging.Handler):
         self.executor.submit(self.handler.emit, record)
 
 
-logger = logging.getLogger("fastapi_logger")
-logger.setLevel(logging.DEBUG)
+def setup_logger(name, log_file, level=logging.DEBUG):
+    """Logger setup"""
 
-os.makedirs(LOG_DIR, exist_ok=True)
-log_file = os.path.join(LOG_DIR, "fastapi_app.log")
-rotating_handler = RotatingFileHandler(log_file, maxBytes=32 * 1024 * 1024, backupCount=5)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-rotating_handler.setFormatter(formatter)
+    new_logger = logging.getLogger(name)
+    new_logger.setLevel(level)
 
-async_handler = AsyncHandler(rotating_handler)
-logger.addHandler(async_handler)
+    rotating_handler = RotatingFileHandler(f'{LOG_DIR}/{log_file}', maxBytes=1024 * 1024, backupCount=5)
+
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    rotating_handler.setFormatter(formatter)
+
+    async_handler = AsyncHandler(rotating_handler)
+    new_logger.addHandler(async_handler)
+
+    return new_logger
 
 
 config = {
@@ -67,6 +73,8 @@ config = {
     "current_device": None,
     "cuda_available": None,
 }
+
+logger = setup_logger("fastapi_logger", "fastapi_app.log", logging.DEBUG)
 
 
 @asynccontextmanager
@@ -180,10 +188,20 @@ async def generate_images(request: ImageGenerationRequest = Depends(), files: Li
     try:
         logger.info("GENERATE_IMAGES. Starting generation.")
 
+        prompt = request.prompt
+        if prompt is not None:
+            if len(prompt) == 1:
+                prompt = prompt[0]
+
+        negative_prompt = request.negative_prompt
+        if negative_prompt is not None:
+            if len(negative_prompt) == 1:
+                negative_prompt = negative_prompt[0]
+
         generated_images = config["ip_adapter"].generate(
             pil_image=image_prompts,
-            prompt=request.prompt if len(request.prompt) > 1 else request.prompt[0],
-            negative_prompt=request.negative_prompt if len(request.negative_prompt) > 1 else request.negative_prompt[0],
+            prompt=prompt,
+            negative_prompt=negative_prompt,
             num_samples=request.num_samples,
             height=request.height,
             width=request.width,
@@ -249,8 +267,9 @@ async def change_model(request: ChangeModelRequest):
         logger.error("CHANGE_MODEL. ERROR while loading model pipeline: %s.", str(e))
         raise HTTPException(status_code=422, detail=str(e)) from e
 
+    config["sd_version"] = request.model_type
     logger.info("CHANGE_MODEL. IP-Adapter %s successfully loaded into new model.", config["current_adapter"])
-    return ChangeModelResponse(message=f"Model type successfully changed to {request.model_type}")
+    return ChangeModelResponse(message=f"Model type successfully changed to {config["sd_version"]}")
 
 
 @router.post("/change_adapter", response_model=ChangeAdapterResponse, status_code=HTTPStatus.OK)
@@ -317,28 +336,34 @@ async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file
     return ChangeAdapterResponse(message=f"IP Adapter {data.id} loaded successfully")
 
 
-@router.get("/get_adapters_list", response_model=ModelListResponse, status_code=HTTPStatus.OK)
-async def get_adapters_list():
+@router.get("/get_available_adapter_checkpoints", response_model=ModelListResponse, status_code=HTTPStatus.OK)
+async def get_available_adapter_checkpoints():
     """Get list of all available for inference IP-Adapters"""
 
     logger.info("GET_ADAPTERS_LIST. Request.")
-    adapters_list = [
-        {"id": adapter_id, "description": config["adapters_list"][adapter_id]["description"]}
-        for adapter_id in config["adapters_list"]
-    ]
+    adapters_list = {
+        adapter_id: config["adapters_list"][adapter_id]["description"] for adapter_id in config["adapters_list"]
+    }
     return ModelListResponse(models=adapters_list)
 
 
-@router.get("/get_models_list", response_model=ModelListResponse, status_code=HTTPStatus.OK)
-async def get_models_list():
+@router.get("/get_available_model_types", response_model=ModelListResponse, status_code=HTTPStatus.OK)
+async def get_available_model_types():
     """Get list of all available StableDiffusion types"""
 
     logger.info("GET_MODELS_LIST. Request.")
-    models_list = [
-        {"id": "anime", "description": "StableDiffusion-v1-5 version finetuned for better anime style generation"},
-        {"id": "standard", "description": "StableDiffusion-v1-5 basic version"},
-    ]
+    models_list = {"anime": "Anime version of StableDiffusion-v1-5",
+                   "standard": "Basic version of StableDiffusion-v1-5"}
+
     return ModelListResponse(models=models_list)
+
+
+@router.get("/get_current_model_type", response_model=CurrentModelResponse, status_code=HTTPStatus.OK)
+async def get_current_model_type():
+    """Get type of a current StableDiffusion model"""
+
+    logger.info("GET_CURRENT_MODEL_TYPE. Request.")
+    return CurrentModelResponse(model_type=config['sd_version'])
 
 
 @router.delete("/remove_adapter_checkpoint/{model_id}", response_model=RemoveResponse, status_code=HTTPStatus.OK)
