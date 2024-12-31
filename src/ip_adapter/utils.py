@@ -10,7 +10,6 @@ def is_torch2_available():
 
 def get_generator(seed, device):
     """Get generator for image generation"""
-
     if seed is not None:
         if isinstance(seed, list):
             generator = [torch.Generator(device).manual_seed(seed_item) for seed_item in seed]

@@ -96,7 +96,7 @@ class IPAdapter:  # pylint: disable=R0902
         return image_proj_model
 
     def set_ip_adapter(self):
-        """Insert IP-Adapter into StableDiffusion pipeline"""
+        """Insert IP Adapter into StableDiffusion pipeline"""
 
         unet = self.pipe.unet
         attn_procs = {}
@@ -129,7 +129,7 @@ class IPAdapter:  # pylint: disable=R0902
                 self.pipe.controlnet.set_attn_processor(CNAttnProcessor(num_tokens=self.num_tokens))
 
     def load_ip_adapter(self):
-        """Load IP Adapter from checkpoint"""
+        """Load IP-Adapter from checkpoint"""
 
         if os.path.splitext(self.ip_ckpt)[-1] == ".safetensors":
             state_dict = {"image_proj": {}, "ip_adapter": {}}
