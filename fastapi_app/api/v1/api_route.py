@@ -43,18 +43,23 @@ class AsyncHandler(logging.Handler):
         self.executor.submit(self.handler.emit, record)
 
 
-logger = logging.getLogger("fastapi_logger")
-logger.setLevel(logging.DEBUG)
+def setup_logger(name, log_file, level=logging.DEBUG):
+    """Logger setup"""
 
-os.makedirs(LOG_DIR, exist_ok=True)
-log_file = os.path.join(LOG_DIR, "fastapi_app.log")
-rotating_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024, backupCount=5)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-rotating_handler.setFormatter(formatter)
+    new_logger = logging.getLogger(name)
+    new_logger.setLevel(level)
 
-async_handler = AsyncHandler(rotating_handler)
-logger.addHandler(async_handler)
+    rotating_handler = RotatingFileHandler(f'{LOG_DIR}/{log_file}', maxBytes=1024 * 1024, backupCount=5)
+
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    rotating_handler.setFormatter(formatter)
+
+    async_handler = AsyncHandler(rotating_handler)
+    new_logger.addHandler(async_handler)
+
+    return new_logger
 
 
 config = {
@@ -68,6 +73,8 @@ config = {
     "current_device": None,
     "cuda_available": None,
 }
+
+logger = setup_logger("fastapi_logger", "fastapi_app.log", logging.DEBUG)
 
 
 @asynccontextmanager
