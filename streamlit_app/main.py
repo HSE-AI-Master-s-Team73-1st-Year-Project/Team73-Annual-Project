@@ -1,147 +1,226 @@
-import asyncio
-import streamlit as st
 import os
 import logging
-from api_requests import *
 from logging.handlers import RotatingFileHandler
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+import streamlit as st
+from .api_requests import (
+    generate_images,
+    load_new_adapter_checkpoint,
+    change_adapter,
+    change_model,
+    get_available_adapter_checkpoints,
+    get_available_model_types,
+    get_current_model_type,
+    remove,
+    remove_all,
+)
 
 
-# Запускаем асинх код в другом потоке
+LOG_DIR = "/home/chaichuk/Team73-Annual-Project/streamlit_app/logs"
+
+
+class AsyncHandler(logging.Handler):
+    def __init__(self, handler):
+        super().__init__()
+        self.handler = handler
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
+    def emit(self, record):
+        self.executor.submit(self.handler.emit, record)
+
+
+def setup_logger(name, log_file, level=logging.DEBUG):
+    """Logger setup"""
+
+    os.makedirs(LOG_DIR, exist_ok=True)
+
+    new_logger = logging.getLogger(name)
+    new_logger.setLevel(level)
+
+    rotating_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024, backupCount=5)
+
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    rotating_handler.setFormatter(formatter)
+
+    async_handler = AsyncHandler(rotating_handler)
+    new_logger.addHandler(async_handler)
+
+    return new_logger
+
+
 def run_async(coroutine):
+    """Run async function"""
+
     loop = asyncio.new_event_loop()
     return loop.run_until_complete(coroutine)
 
 
-# Сетап логгера для записи в logs/ (возможно переместить позже в отдельный файл)
-def setup_logger(name, log_file, level=logging.INFO):
-    os.makedirs("logs", exist_ok=True)
+def display_image_grid(images, cols=2):
+    """Display multiple images as grid"""
 
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    rows = len(images) // cols + (len(images) % cols > 0)
+    for i in range(rows):
+        cols_list = st.columns(cols)
+        for j in range(cols):
+            index = i * cols + j
+            if index < len(images):
+                img = images[index]
 
-    handler = RotatingFileHandler(f"logs/{log_file}", maxBytes=1024*1024, backupCount=5)
-    handler.setFormatter(formatter)
-
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    logger.addHandler(handler)
-
-    return logger
+                with cols_list[j]:
+                    st.image(img, use_container_width=True)
 
 
-logger = setup_logger("streamlit_app", "app.log")
+logger = setup_logger("streamlit_app", "streamlit_app.log")
 
-st.title("Anime profile picture generation web app")
+st.title(":blue[Anime Image Generation App] :sparkles:")
 
 logger.info("Application started")
-logger.debug("This is a debug message")
-logger.warning("This is a warning")
 
 # GET список моделей
-model_list = run_async(get_models_list())
-st.session_state.current_model = model_list.json().get("id")[0] # присваивает аниме вариант по стандарту
+model_types_list = run_async(get_available_model_types())
+model_types = list(model_types_list["models"].keys())
+model_descriptions = list(model_types_list["models"].values())
 
-# Радио кнопки выбора модели
+current_model = run_async(get_current_model_type())
+st.session_state.current_model = current_model["model_type"]
+
+
+def format_func(x):
+    """Format for model selection radio buttons"""
+    if x == "anime":
+        return f":rainbow[{x.upper()}] :ideograph_advantage:"
+    return f"**{x.upper()}**"
+
+
 selected_model = st.radio(
-    "Select Model Type:",
-    ("standard", "anime"),
-    index=0 if st.session_state.current_model == "anime" else 1
+    "Select Model Type:", model_types, format_func=format_func, index=model_types.index(st.session_state.current_model)
 )
+
+st.caption(f"**{model_types_list["models"][selected_model]}**")
 
 # Проверка на текущую модель
 if selected_model != st.session_state.current_model:
-    if st.button("Change Model"):
-        with st.spinner("Changing model..."):
-            result = change_model(selected_model)
-        logger.info(f"Model successfully changed to {selected_model}")
-        st.success(result)
+    logger.info("Changing model type to %s.", selected_model)
+    if st.button("Change StableDiffusion Version"):
+        with st.spinner("Changing model version..."):
+            result = run_async(change_model(selected_model))
+        logger.info("Model type successfully changed to %s.", selected_model)
+        st.success(result["message"])
 else:
-    logger.info(f"The {selected_model} model is already selected.")
+    st.success(f"The {selected_model} model is already selected.")
+    logger.info("The %s model is already selected.", selected_model)
 
-# GET список адаптеров
-adapter_list = run_async(get_adapters_list())
+# Загрузка и генерация изображений
+st.subheader("Generate Images")
 
-# Проверка на адаптеры
-if adapter_list:
-    st.subheader("Available Adapters")
-    for adapter in adapter_list:
-        st.write(f"ID: {adapter['id']}, Description: {adapter.get('description', None)}")
+st.session_state.expander_open = True
+
+with st.expander("Input Images and Parameters", expanded=st.session_state.expander_open):
+    uploaded_files = st.file_uploader("Upload Image Files", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+
+    prompts = st.text_area("Enter prompts through new line").split("\n")
+    st.caption("Optional, one for all the pictures, or the same number as the pictures")
+
+    negative_prompts = st.text_area("Enter negative prompts through new line").split("\n")
+    st.caption("Optional, one for all the pictures, or the same number as the pictures")
+
+    params = {}
+    params["scale"] = st.slider("**Scale**", min_value=0.1, max_value=1.0, value=0.6, step=0.1)
+
+    st.caption("The degree of influence of uploaded images on generation")
+    params["num_samples"] = st.slider("**Num samples**", min_value=1, max_value=6, value=4, step=1)
+
+    st.caption("The number of images that will be generated for each uploaded image.")
+    random_seed = st.number_input("Random seed (optional)", value=None)
+    if random_seed is not None:
+        params["random_seed"] = random_seed
+
+    params["guidance_scale"] = st.slider("Guidance scale", min_value=0.0, max_value=20.0, value=7.5, step=0.1)
+    st.caption("The degree of influence of prompts on generation process")
+
+    params["height"] = st.number_input("Height", min_value=64, max_value=1024, value=512, step=64)
+    params["width"] = st.number_input("Width", min_value=64, max_value=1024, value=512, step=64)
+
+    params["num_inference_steps"] = st.number_input("Number of inference steps", min_value=1, value=50)
+
+    params["device"] = st.selectbox("Device", options=["cuda", "cpu"], index=0)
+    if params["device"] == "cpu":
+        st.markdown(":red-background[Using cpu is extremely costly. Either reduce the parameters or change to cuda.]")
+
+    logger.debug("Set generation params: %s.", params)
+
+    if st.button("Start Generation", type="primary", use_container_width=True):
+        if uploaded_files:
+            with st.spinner("Generating images..."):
+                logger.info("Starting generation.")
+                logger.debug("Starting generation with params: %s.", params)
+                generation_result = run_async(generate_images(uploaded_files, params, prompts, negative_prompts))
+                if generation_result["code"] == 200:
+                    logger.info("Generation successfull.")
+                    generated_images = generation_result["result"]
+                    display_image_grid(generated_images, cols=params["num_samples"])
+                else:
+                    st.error(generation_result["result"])
+                    logger.error("Generation ERROR: %s", generation_result["result"])
+        else:
+            logger.info("No images uploaded!")
+            st.warning("Please upload at least one image.")
+
+# Список адаптеров
+logger.info("Getting adapters list.")
+adapter_list = run_async(get_available_adapter_checkpoints())
+
+# Кнопка замены адаптера
+st.subheader("Change Active IP-Adapter")
+if adapter_list["models"]:
+    selected_adapter = st.selectbox("Select IP-Adapter to Use", options=list(adapter_list["models"].keys()))
+    st.caption(
+        f"**:blue-background[{selected_adapter}] Checkpoint Description:** {adapter_list["models"][selected_adapter]}"
+    )
+    if st.button("Change IP-Adapter"):
+        logger.info("Changing adapter to %s", selected_adapter)
+        result = run_async(change_adapter(selected_adapter))
+        logger.info("Adapter changed to: %s", selected_adapter)
+        st.success(f"{result['message']}. Please reload the page.")
 else:
-    logger.info("No adapters available!")
-    st.warning("No adapters available, please upload at least one.")
+    logger.warning("No adapters available to change!")
+    st.warning("No adapters available to change.")
 
 # Загрузка нового чекпоинта адаптера
-st.subheader("Load New Adapter")
+st.subheader("Upload New IP_Adapter Checkpoint")
 new_adapter_file = st.file_uploader("Upload Adapter Checkpoint (.bin)", type=["bin"])
 new_adapter_id = st.text_input("New Adapter ID")
 new_adapter_description = st.text_input("New Adapter Description (optional)")
 
 # Кнопка загрузки чекпоинта
-if st.button("Load New Adapter"):
+if st.button("Upload Checkpoint"):
     if new_adapter_file and new_adapter_id:
-        file_bytes = io.BytesIO(new_adapter_file.read())
-        result = run_async(load_new_adapter_checkpoint(file_bytes, new_adapter_id, new_adapter_description))
-        logger.info(f"Loaded adapter with id: {new_adapter_id}")
-        st.success(f"Adapter loaded: {result['message']}")
+        logger.info('Loading new adapter checkpoint.')
+        result = run_async(load_new_adapter_checkpoint(new_adapter_file, new_adapter_id, new_adapter_description))
+        logger.info("Loaded adapter with id: %s.", new_adapter_id)
+        st.success(result["message"])
     else:
-        logger.info("")
+        logger.error("Adapter file or id not provided.")
         st.error("Please provide both a file and an ID for the new adapter.")
 
-# Кнопка замены адаптера
-st.subheader("Change Active Adapter")
-if adapter_list:
-    selected_adapter = st.selectbox("Select Adapter to Use", options=[adapter['id'] for adapter in adapter_list])
-    if st.button("Change Adapter"):
-        result = run_async(change_adapter(selected_adapter))
-        logger.info(f"Adapter changed to: {selected_adapter}")
-        st.success(f"Adapter changed: {result['message']}")
-else:
-    logger.info("No adapters available to change!")
-    st.warning("No adapters available to change.")
-
 # Кнопка удаления адаптера
-st.subheader("Remove Adapter")
-if adapter_list:
-    adapter_to_remove = st.selectbox("Select Adapter to Remove", options=[adapter['id'] for adapter in adapter_list])
-    if st.button("Remove Selected Adapter"):
+st.subheader("Remove Uploaded IP-Adapter Checkpoint")
+if adapter_list["models"]:
+    adapter_to_remove = st.selectbox("Select Checkpoint to Remove", options=list(adapter_list["models"].keys()))
+    if st.button("Remove Selected Adapter", type="primary"):
+        logger.info("Attempting to remove checkpoint %s.", adapter_to_remove)
         result = run_async(remove(adapter_to_remove))
-        logger.info(f"Adapter removed: {adapter_to_remove}")
-        st.success(f"Adapter removed: {result['message']}")
+        logger.info("Adapter %s removed.", adapter_to_remove)
+        st.success(result["message"])
 else:
-    logger.info("No adapters available to remove!")
+    logger.warning("No adapters available to remove!")
     st.warning("No adapters available to remove.")
 
 # Кнопка удаления всех адаптеров
-st.subheader("Remove All Adapters")
-if st.button("Remove All Adapters"):
+st.subheader("Remove All Upoaded IP-Adapter Checkpoints")
+if st.button("Remove All", type="primary"):
+    logger.info("Removing all adapters.")
     result = run_async(remove_all())
-    logger.info("All adapters removed!")
-    st.success(f"All adapters removed: {result['message']}")
-
-# Кнопка загрузки и генерации изображений
-with st.expander("Input Images and Parameters"):
-    uploaded_files = st.file_uploader("Upload Image Files", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-
-    params = {}
-    params['prompts'] = st.text_area("Enter prompts through new line (optional)").split('\n')
-    params['negative_prompts'] = st.text_area("Enter negative prompts through new line (optional)").split('\n')
-    params['scale'] = st.slider("Scale", min_value=0.1, max_value=1.0, value=0.6, step=0.1)
-    params['num_samples'] = st.number_input("Number of samples", min_value=1, value=1)
-    params['random_seed'] = st.number_input("Random seed", value=42)
-    params['guidance_scale'] = st.slider("Guidance scale", min_value=0.0, max_value=20.0, value=7.5, step=0.1)
-    params['height'] = st.number_input("Height", min_value=64, max_value=1024, value=512, step=64)
-    params['width'] = st.number_input("Width", min_value=64, max_value=1024, value=512, step=64)
-    params['num_inference_steps'] = st.number_input("Number of inference steps", min_value=1, value=50)
-    params['device'] = st.selectbox("Device", options=["cuda", "cpu"], index=0)
-    if params['device'] == "cpu":
-        st.write("Using cpu for computations may be costly. Either reduce the parameters or change to cuda.")
-
-    if st.button("Generate Images"):
-        if uploaded_files:
-            with st.spinner("Generating images..."):
-                generated_images = run_async(generate_images(uploaded_files, params))
-            for i, img in enumerate(generated_images):
-                st.image(img, caption=f"Generated Image {i + 1}", use_column_width=True)
-        else:
-            logger.info("No images uploaded!")
-            st.warning("Please upload at least one image.")
-
+    logger.info("All uploaded checkpoints removed!")
+    st.success("All uploaded checkpoints removed")

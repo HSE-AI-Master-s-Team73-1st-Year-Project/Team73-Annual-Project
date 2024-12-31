@@ -13,7 +13,7 @@ class ImageGenerationRequest(BaseModel):
     negative_prompt: Optional[list[str]] = None
     scale: float = 0.6
     num_samples: int = 1
-    random_seed: int = 42
+    random_seed: Optional[int] = None
     guidance_scale: float = 7.5
     height: int = 512
     width: int = 512
@@ -52,7 +52,11 @@ class ChangeModelResponse(BaseModel):
 
 
 class ModelListResponse(BaseModel):
-    models: list[Dict]
+    models: Dict[str, str]
+
+
+class CurrentModelResponse(BaseModel):
+    model_type: str
 
 
 class RemoveResponse(BaseModel):
