@@ -16,6 +16,16 @@
 - Гончаров Антон Дмитриевич (tg: [@GonHunch](https://t.me/GonHunch))
 - Чайчук Михаил Викторович (tg: [@chaychuk_mikhail](https://t.me/chaychuk_mikhail))
 
+### Сборка Docker:
+
+```
+1. git clone git@github.com:HSE-AI-Master-s-Team73-1st-Year-Project/Team73-Annual-Project.git
+2. cd path/to/clone/Team73-Annual-Project
+3. docker-compose up -d --build
+4. open "http://localhost:8501" in your browser tab
+5. docker-compose down (when finished working)
+```
+
 ### Структура репозитория:
 
 - Файл [checkpoints.md](./checkpoints.md) — описание пройденных этапов работы над годовым проектом.
