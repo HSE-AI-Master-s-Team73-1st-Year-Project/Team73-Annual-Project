@@ -57,58 +57,55 @@ else:
 # Загрузка и генерация изображений
 st.subheader("Generate Images")
 
-st.session_state.expander_open = True
+uploaded_files = st.file_uploader("Upload Image Files", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
-with st.expander("Input Images and Parameters", expanded=st.session_state.expander_open):
-    uploaded_files = st.file_uploader("Upload Image Files", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+prompts = st.text_area("Enter prompts through new line").split("\n")
+st.caption("Optional, one for all the pictures, or the same number as the pictures")
 
-    prompts = st.text_area("Enter prompts through new line").split("\n")
-    st.caption("Optional, one for all the pictures, or the same number as the pictures")
+negative_prompts = st.text_area("Enter negative prompts through new line").split("\n")
+st.caption("Optional, one for all the pictures, or the same number as the pictures")
 
-    negative_prompts = st.text_area("Enter negative prompts through new line").split("\n")
-    st.caption("Optional, one for all the pictures, or the same number as the pictures")
+params = {}
+params["scale"] = st.slider("**Scale**", min_value=0.1, max_value=1.0, value=0.6, step=0.1)
 
-    params = {}
-    params["scale"] = st.slider("**Scale**", min_value=0.1, max_value=1.0, value=0.6, step=0.1)
+st.caption("The degree of influence of uploaded images on generation")
+params["num_samples"] = st.slider("**Num samples**", min_value=1, max_value=6, value=4, step=1)
 
-    st.caption("The degree of influence of uploaded images on generation")
-    params["num_samples"] = st.slider("**Num samples**", min_value=1, max_value=6, value=4, step=1)
+st.caption("The number of images that will be generated for each uploaded image.")
+random_seed = st.number_input("Random seed (optional)", value=None)
+if random_seed is not None:
+    params["random_seed"] = random_seed
 
-    st.caption("The number of images that will be generated for each uploaded image.")
-    random_seed = st.number_input("Random seed (optional)", value=None)
-    if random_seed is not None:
-        params["random_seed"] = random_seed
+params["guidance_scale"] = st.slider("Guidance scale", min_value=0.0, max_value=20.0, value=7.5, step=0.1)
+st.caption("The degree of influence of prompts on generation process")
 
-    params["guidance_scale"] = st.slider("Guidance scale", min_value=0.0, max_value=20.0, value=7.5, step=0.1)
-    st.caption("The degree of influence of prompts on generation process")
+params["height"] = st.number_input("Height", min_value=64, max_value=1024, value=512, step=64)
+params["width"] = st.number_input("Width", min_value=64, max_value=1024, value=512, step=64)
 
-    params["height"] = st.number_input("Height", min_value=64, max_value=1024, value=512, step=64)
-    params["width"] = st.number_input("Width", min_value=64, max_value=1024, value=512, step=64)
+params["num_inference_steps"] = st.number_input("Number of inference steps", min_value=1, value=50)
 
-    params["num_inference_steps"] = st.number_input("Number of inference steps", min_value=1, value=50)
+params["device"] = st.selectbox("Device", options=["cuda", "cpu"], index=0)
+if params["device"] == "cpu":
+    st.markdown(":red-background[Using cpu is extremely costly. Either reduce the parameters or change to cuda.]")
 
-    params["device"] = st.selectbox("Device", options=["cuda", "cpu"], index=0)
-    if params["device"] == "cpu":
-        st.markdown(":red-background[Using cpu is extremely costly. Either reduce the parameters or change to cuda.]")
+logger.debug("Set generation params: %s.", params)
 
-    logger.debug("Set generation params: %s.", params)
-
-    if st.button("Start Generation", type="primary", use_container_width=True):
-        if uploaded_files:
-            with st.spinner("Generating images..."):
-                logger.info("Starting generation.")
-                logger.debug("Starting generation with params: %s.", params)
-                generation_result = run_async(generate_images(uploaded_files, params, prompts, negative_prompts))
-                if generation_result["code"] == 200:
-                    logger.info("Generation successfull.")
-                    generated_images = generation_result["result"]
-                    display_image_grid(generated_images, cols=params["num_samples"])
-                else:
-                    st.error(generation_result["result"])
-                    logger.error("Generation ERROR: %s", generation_result["result"])
-        else:
-            logger.info("No images uploaded!")
-            st.warning("Please upload at least one image.")
+if st.button("Start Generation", type="primary", use_container_width=True):
+    if uploaded_files:
+        with st.spinner("Generating images..."):
+            logger.info("Starting generation.")
+            logger.debug("Starting generation with params: %s.", params)
+            generation_result = run_async(generate_images(uploaded_files, params, prompts, negative_prompts))
+            if generation_result["code"] == 200:
+                logger.info("Generation successfull.")
+                generated_images = generation_result["result"]
+                display_image_grid(generated_images, cols=params["num_samples"])
+            else:
+                st.error(generation_result["result"])
+                logger.error("Generation ERROR: %s", generation_result["result"])
+    else:
+        logger.info("No images uploaded!")
+        st.warning("Please upload at least one image.")
 
 # Список адаптеров
 logger.info("Getting adapters list.")
@@ -125,13 +122,13 @@ if adapter_list["models"]:
         logger.info("Changing adapter to %s", selected_adapter)
         result = run_async(change_adapter(selected_adapter))
         logger.info("Adapter changed to: %s", selected_adapter)
-        st.success(f"{result['message']}. Please reload the page.")
+        st.success(f"{result['message']}.")
 else:
     logger.warning("No adapters available to change!")
     st.warning("No adapters available to change.")
 
 # Загрузка нового чекпоинта адаптера
-st.subheader("Upload New IP_Adapter Checkpoint")
+st.subheader("Upload New IP-Adapter Checkpoint")
 new_adapter_file = st.file_uploader("Upload Adapter Checkpoint (.bin)", type=["bin"])
 new_adapter_id = st.text_input("New Adapter ID")
 new_adapter_description = st.text_input("New Adapter Description (optional)")
@@ -141,7 +138,7 @@ if st.button("Upload Checkpoint"):
     if new_adapter_file and new_adapter_id:
         logger.info('Loading new adapter checkpoint.')
         result = run_async(load_new_adapter_checkpoint(new_adapter_file, new_adapter_id, new_adapter_description))
-        logger.info("Loaded adapter with id: %s.", new_adapter_id)
+        logger.info("Loaded adapter with id: %s. Please reload the page.", new_adapter_id)
         st.success(result["message"])
     else:
         logger.error("Adapter file or id not provided.")
