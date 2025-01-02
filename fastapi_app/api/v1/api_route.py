@@ -13,16 +13,21 @@ from diffusers import AutoencoderKL, DDIMScheduler, StableDiffusionPipeline
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from starlette.responses import StreamingResponse
 from PIL import Image
-from pydantic_models.models import (ChangeAdapterRequest,
-                                    ChangeAdapterResponse, ChangeModelRequest,
-                                    ChangeModelResponse,
-                                    ImageGenerationRequest,
-                                    LoadAdapterRequest, LoadAdapterResponse,
-                                    ModelListResponse, CurrentModelResponse,
-                                    RemoveResponse)
+from pydantic_models.models import (
+    ChangeAdapterRequest,
+    ChangeAdapterResponse,
+    ChangeModelRequest,
+    ChangeModelResponse,
+    ImageGenerationRequest,
+    LoadAdapterRequest,
+    LoadAdapterResponse,
+    ModelListResponse,
+    CurrentModelResponse,
+    RemoveResponse,
+)
 from ip_adapter import IPAdapter
 
-DEFAULT_CHECKPOINT_PATH = "512_res_model_checkpoint_100"
+DEFAULT_CHECKPOINT_NAME = "512_res_model_checkpoint_100"
 PRELOADED_CHECKPOINTS_PATH = "/home/chaichuk/Team73-Annual-Project/checkpoints"
 TEMPORARY_CHECKPOINTS_PATH = "/home/chaichuk/Team73-Annual-Project/tmp_checkpoints"
 IMAGE_ENCODER_PATH = "/home/chaichuk/Team73-Annual-Project/models/image_encoder"
@@ -51,9 +56,9 @@ def setup_logger(name, log_file, level=logging.DEBUG):
     new_logger = logging.getLogger(name)
     new_logger.setLevel(level)
 
-    rotating_handler = RotatingFileHandler(f'{LOG_DIR}/{log_file}', maxBytes=1024 * 1024, backupCount=5)
+    rotating_handler = RotatingFileHandler(f"{LOG_DIR}/{log_file}", maxBytes=1024 * 1024, backupCount=5)
 
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     rotating_handler.setFormatter(formatter)
 
     async_handler = AsyncHandler(rotating_handler)
@@ -112,7 +117,26 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
 
     available_checkpoints = os.listdir(PRELOADED_CHECKPOINTS_PATH)
 
-    basic_ckpt_path = f"{PRELOADED_CHECKPOINTS_PATH}/{available_checkpoints[0]}/ip_adapter.bin"
+    default_index = available_checkpoints.index(DEFAULT_CHECKPOINT_NAME)
+
+    basic_ckpt_path = f"{PRELOADED_CHECKPOINTS_PATH}/{DEFAULT_CHECKPOINT_NAME}/ip_adapter.bin"
+
+    config["adapters_list"] = {
+        "Default": {
+            "description": "Default IP-Adapter checkpoint. Trained for use with face images.",
+            "path": basic_ckpt_path,
+            "preloaded": True,
+        }
+    }
+
+    for i, adapter_name in enumerate(available_checkpoints):
+        if i == default_index:
+            continue
+        config['adapters_list'][adapter_name] = {
+            "description": f"preloaded checkpoint {i}",
+            "path": f"{PRELOADED_CHECKPOINTS_PATH}/{adapter_name}/ip_adapter.bin",
+            "preloaded": True,
+        }
 
     ip_model = IPAdapter(pipeline, IMAGE_ENCODER_PATH, basic_ckpt_path, device)
 
@@ -121,14 +145,6 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
     config["pipeline"] = pipeline
     config["sd_version"] = "anime"
     config["ip_adapter"] = ip_model
-    config["adapters_list"] = {
-        adapter_name: {
-            "description": f"preloaded checkpoint {i}",
-            "path": f"{PRELOADED_CHECKPOINTS_PATH}/{adapter_name}/ip_adapter.bin",
-            "preloaded": True,
-        }
-        for i, adapter_name in enumerate(available_checkpoints)
-    }
     config["current_adapter"] = available_checkpoints[0]
     config["current_device"] = device
     config["cuda_available"] = torch.cuda.is_available()
@@ -180,7 +196,7 @@ async def generate_images(request: ImageGenerationRequest = Depends(), files: Li
 
     for file in files:
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert('RGB').resize((512, 512))
+        image = Image.open(io.BytesIO(contents)).convert("RGB").resize((512, 512))
         image_prompts.append(image)
 
     logger.info("GENERATE_IMAGES. Image files processed successfully.")
@@ -283,11 +299,11 @@ async def change_adapter(request: ChangeAdapterRequest):
         raise HTTPException(status_code=422, detail=f"IP-Adapter {request.id} not found")
 
     if request.id == config["current_adapter"]:
-        logger.info('CHANGE_ADAPTER. Adapter %s is already in use.')
+        logger.info("CHANGE_ADAPTER. Adapter %s is already in use.")
         return ChangeAdapterResponse(message=f"IP-Adapter {request.id} is already in use")
 
     try:
-        logger.info('CHANGE_ADAPTER. Loading %s adapter.', request.id)
+        logger.info("CHANGE_ADAPTER. Loading %s adapter.", request.id)
 
         config["ip_adapter"] = IPAdapter(
             config["pipeline"],
@@ -297,10 +313,10 @@ async def change_adapter(request: ChangeAdapterRequest):
         )
 
     except Exception as e:
-        logger.error('CHANGE_ADAPTER. ERROR while loading IP-Adapter: %s.', str(e))
+        logger.error("CHANGE_ADAPTER. ERROR while loading IP-Adapter: %s.", str(e))
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    logger.info('CHANGE_ADAPTER. Adapter %s successfully loaded.', request.id)
+    logger.info("CHANGE_ADAPTER. Adapter %s successfully loaded.", request.id)
     return ChangeAdapterResponse(message=f"IP-Adapter successfully changed to {request.id}")
 
 
@@ -352,8 +368,10 @@ async def get_available_model_types():
     """Get list of all available StableDiffusion types"""
 
     logger.info("GET_MODELS_LIST. Request.")
-    models_list = {"anime": "Anime version of StableDiffusion-v1-5",
-                   "standard": "Basic version of StableDiffusion-v1-5"}
+    models_list = {
+        "anime": "Anime version of StableDiffusion-v1-5",
+        "standard": "Basic version of StableDiffusion-v1-5",
+    }
 
     return ModelListResponse(models=models_list)
 
@@ -363,7 +381,7 @@ async def get_current_model_type():
     """Get type of a current StableDiffusion model"""
 
     logger.info("GET_CURRENT_MODEL_TYPE. Request.")
-    return CurrentModelResponse(model_type=config['sd_version'])
+    return CurrentModelResponse(model_type=config["sd_version"])
 
 
 @router.delete("/remove_adapter_checkpoint/{model_id}", response_model=RemoveResponse, status_code=HTTPStatus.OK)
@@ -391,7 +409,7 @@ async def remove(model_id: str):
             config["ip_adapter"] = IPAdapter(
                 config["pipeline"],
                 IMAGE_ENCODER_PATH,
-                config["adapters_list"][DEFAULT_CHECKPOINT_PATH]["path"],
+                config["adapters_list"][DEFAULT_CHECKPOINT_NAME]["path"],
                 config["current_device"],
             )
         except Exception as e:
@@ -413,7 +431,7 @@ async def remove_all():
 
     responses = []
     loaded_adapter_deleted = False
-    for model_id in config["adapters_list"]:
+    for model_id in list(config["adapters_list"].keys()):
         if config["adapters_list"][model_id]["preloaded"]:
             continue
         if model_id == config["current_adapter"]:
@@ -429,7 +447,7 @@ async def remove_all():
             config["ip_adapter"] = IPAdapter(
                 config["pipeline"],
                 IMAGE_ENCODER_PATH,
-                config["adapters_list"][DEFAULT_CHECKPOINT_PATH]["path"],
+                config["adapters_list"][DEFAULT_CHECKPOINT_NAME]["path"],
                 config["current_device"],
             )
         except Exception as e:
