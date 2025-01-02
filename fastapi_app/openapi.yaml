@@ -1,0 +1,418 @@
+openapi: 3.1.0
+info:
+  title: ip_adapter_inference
+  version: 0.1.0
+paths:
+  /:
+    get:
+      summary: Root
+      description: app root function
+      operationId: root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/ip_adapter/generate_images:
+    post:
+      summary: Generate Images
+      description: Generate images with IP-Adapter
+      operationId: generate_images_api_v1_ip_adapter_generate_images_post
+      parameters:
+        - name: scale
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 0.6
+            title: Scale
+        - name: num_samples
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            title: Num Samples
+        - name: random_seed
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: integer
+              - type: 'null'
+            title: Random Seed
+        - name: guidance_scale
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 7.5
+            title: Guidance Scale
+        - name: height
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 512
+            title: Height
+        - name: width
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 512
+            title: Width
+        - name: num_inference_steps
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            title: Num Inference Steps
+        - name: device
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DeviceType'
+            default: cuda
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: >-
+                #/components/schemas/Body_generate_images_api_v1_ip_adapter_generate_images_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ip_adapter/change_model:
+    post:
+      summary: Change Model
+      description: Change StableDiffusion model type from anime to standard or vice versa
+      operationId: change_model_api_v1_ip_adapter_change_model_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeModelRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeModelResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ip_adapter/change_adapter:
+    post:
+      summary: Change Adapter
+      description: Change IP-Adapter checkpoint used in model
+      operationId: change_adapter_api_v1_ip_adapter_change_adapter_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeAdapterRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeAdapterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ip_adapter/load_new_adapter_checkpoint:
+    post:
+      summary: Load New Adapter Checkpoint
+      description: Change IP-Adapter checkpoint used in model
+      operationId: >-
+        load_new_adapter_checkpoint_api_v1_ip_adapter_load_new_adapter_checkpoint_post
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            title: Id
+        - name: description
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Description
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: >-
+                #/components/schemas/Body_load_new_adapter_checkpoint_api_v1_ip_adapter_load_new_adapter_checkpoint_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadAdapterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ip_adapter/get_available_adapter_checkpoints:
+    get:
+      summary: Get Available Adapter Checkpoints
+      description: Get list of all available for inference IP-Adapters
+      operationId: >-
+        get_available_adapter_checkpoints_api_v1_ip_adapter_get_available_adapter_checkpoints_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+  /api/v1/ip_adapter/get_available_model_types:
+    get:
+      summary: Get Available Model Types
+      description: Get list of all available StableDiffusion types
+      operationId: >-
+        get_available_model_types_api_v1_ip_adapter_get_available_model_types_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+  /api/v1/ip_adapter/get_current_model_type:
+    get:
+      summary: Get Current Model Type
+      description: Get type of a current StableDiffusion model
+      operationId: get_current_model_type_api_v1_ip_adapter_get_current_model_type_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentModelResponse'
+  /api/v1/ip_adapter/remove_adapter_checkpoint/{model_id}:
+    delete:
+      summary: Remove
+      description: Remove IP-Adapter checkpoint with id model_id
+      operationId: remove_api_v1_ip_adapter_remove_adapter_checkpoint__model_id__delete
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Model Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ip_adapter/remove_all:
+    delete:
+      summary: Remove All
+      description: Remove all loaded IP-Adapter checkpoints
+      operationId: remove_all_api_v1_ip_adapter_remove_all_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RemoveResponse'
+                type: array
+                title: Response Remove All Api V1 Ip Adapter Remove All Delete
+components:
+  schemas:
+    Body_generate_images_api_v1_ip_adapter_generate_images_post:
+      properties:
+        files:
+          items:
+            type: string
+            format: binary
+          type: array
+          title: Files
+        prompt:
+          anyOf:
+            - items:
+                type: string
+              type: array
+            - type: 'null'
+          title: Prompt
+        negative_prompt:
+          anyOf:
+            - items:
+                type: string
+              type: array
+            - type: 'null'
+          title: Negative Prompt
+      type: object
+      required:
+        - files
+      title: Body_generate_images_api_v1_ip_adapter_generate_images_post
+    Body_load_new_adapter_checkpoint_api_v1_ip_adapter_load_new_adapter_checkpoint_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+      type: object
+      required:
+        - file
+      title: >-
+        Body_load_new_adapter_checkpoint_api_v1_ip_adapter_load_new_adapter_checkpoint_post
+    ChangeAdapterRequest:
+      properties:
+        id:
+          type: string
+          title: Id
+      type: object
+      required:
+        - id
+      title: ChangeAdapterRequest
+    ChangeAdapterResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+        - message
+      title: ChangeAdapterResponse
+    ChangeModelRequest:
+      properties:
+        model_type:
+          $ref: '#/components/schemas/ModelType'
+      type: object
+      required:
+        - model_type
+      title: ChangeModelRequest
+    ChangeModelResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+        - message
+      title: ChangeModelResponse
+    CurrentModelResponse:
+      properties:
+        model_type:
+          type: string
+          title: Model Type
+      type: object
+      required:
+        - model_type
+      title: CurrentModelResponse
+    DeviceType:
+      type: string
+      enum:
+        - cuda
+        - cpu
+      title: DeviceType
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LoadAdapterResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+        - message
+      title: LoadAdapterResponse
+    ModelListResponse:
+      properties:
+        models:
+          additionalProperties:
+            type: string
+          type: object
+          title: Models
+      type: object
+      required:
+        - models
+      title: ModelListResponse
+    ModelType:
+      type: string
+      enum:
+        - standard
+        - anime
+      title: ModelType
+    RemoveResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+        - message
+      title: RemoveResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+        - loc
+        - msg
+        - type
+      title: ValidationError
