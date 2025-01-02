@@ -27,13 +27,13 @@ https://arxiv.org/pdf/2312.04461
 
 В качестве бейзлайна мы обучили  ip-adapter на stable-diffusion-v1.5.
 
-- Подробности в файле baseline.md
-- Пример обучения и применения модели в файле ip_adapter_demo.ipynb
-- Скрипт с подсчетом метрик в ip_adapter_metrics.ipynb
+- Подробности в файле [baseline.md](./baseline.md)
+- Пример обучения и применения модели в файле  [ip_adapter_demo.ipynb](./ip_adapter_demo.ipynb)
+- Скрипт с подсчетом метрик в [ip_adapter_metrics.ipynb](./ip_adapter_metrics.ipynb)
 
-### Третий этап. DL
+### Третий этап. (чекпоинт 4)
 
-Пробуем что-то более интересное. Имплементим решение из релевантной статьи или пробуем собрать что-то свое похожее.
+Реализовали FastAPI и Streamlit приложения для инференса получившихся IP-адаптеров. Подробности в файле [report.md](./report.md).
 
 ### Четвертый этап. Сервис (TG bot)
 
