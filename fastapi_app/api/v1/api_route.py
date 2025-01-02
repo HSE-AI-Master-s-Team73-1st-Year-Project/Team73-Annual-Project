@@ -138,6 +138,8 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
             "preloaded": True,
         }
 
+    config["current_adapter"] = 'Default'
+
     ip_model = IPAdapter(pipeline, IMAGE_ENCODER_PATH, basic_ckpt_path, device)
 
     config["scheduler"] = noise_scheduler
@@ -145,7 +147,6 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
     config["pipeline"] = pipeline
     config["sd_version"] = "anime"
     config["ip_adapter"] = ip_model
-    config["current_adapter"] = available_checkpoints[0]
     config["current_device"] = device
     config["cuda_available"] = torch.cuda.is_available()
 
@@ -392,11 +393,11 @@ async def remove(model_id: str):
     logger.debug("GET_ADAPTERS_LIST. Requestfor id %s.", model_id)
     if model_id not in config["adapters_list"]:
         logger.error("REMOVE_ADAPTER_CHECKPOINT. ERROR. IP-Adapter %s not found.", model_id)
-        raise HTTPException(status_code=422, detail=f"Model '{model_id}' not found")
+        raise HTTPException(status_code=422, detail=f"IP-Adapter '{model_id}' not found")
 
     if model_id in config["adapters_list"] and config["adapters_list"][model_id]["preloaded"]:
         logger.error("REMOVE_ADAPTER_CHECKPOINT. ERROR. IP-Adapter %s cannot be removed.", model_id)
-        raise HTTPException(status_code=422, detail=f"Model '{model_id}' cannot be removed")
+        raise HTTPException(status_code=422, detail=f"IP-Adapter '{model_id}' cannot be removed")
 
     logger.info("REMOVE_ADAPTER_CHECKPOINT. Removing adapter %s.", model_id)
 
@@ -409,17 +410,17 @@ async def remove(model_id: str):
             config["ip_adapter"] = IPAdapter(
                 config["pipeline"],
                 IMAGE_ENCODER_PATH,
-                config["adapters_list"][DEFAULT_CHECKPOINT_NAME]["path"],
+                config["adapters_list"]['default']["path"],
                 config["current_device"],
             )
         except Exception as e:
             logger.error("REMOVE_ADAPTER_CHECKPOINT. ERROR while loading default adapter %s.", str(e))
             raise HTTPException(status_code=422, detail=str(e)) from e
-        logger.info("REMOVE_ADAPTER_CHECKPOINT. Adapter %s successfully removed.", model_id)
-        return RemoveResponse(message=f"Adapter {model_id} removed, ip adapter changed to default")
+        logger.info("REMOVE_ADAPTER_CHECKPOINT. IP-Adapter %s successfully removed.", model_id)
+        return RemoveResponse(message=f"IP-Adapter {model_id} removed, ip-adapter changed to default")
 
-    logger.info("REMOVE_ADAPTER_CHECKPOINT. Adapter %s successfully removed.", model_id)
-    return RemoveResponse(message=f"Adapter {model_id} removed")
+    logger.info("REMOVE_ADAPTER_CHECKPOINT. IP-Adapter %s successfully removed.", model_id)
+    return RemoveResponse(message=f"IP-Adapter {model_id} removed")
 
 
 @router.delete("/remove_all", response_model=list[RemoveResponse], status_code=HTTPStatus.OK)
@@ -447,7 +448,7 @@ async def remove_all():
             config["ip_adapter"] = IPAdapter(
                 config["pipeline"],
                 IMAGE_ENCODER_PATH,
-                config["adapters_list"][DEFAULT_CHECKPOINT_NAME]["path"],
+                config["adapters_list"]['default']["path"],
                 config["current_device"],
             )
         except Exception as e:
