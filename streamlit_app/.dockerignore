@@ -1,0 +1,9 @@
+*.ipynb
+
+*.md
+
+.venv/
+
+logs/
+
+.gitignore
