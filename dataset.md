@@ -12,5 +12,5 @@
 - Файл captions.csv — описания для картинок в формате таблицы
 - Файл CelebAMask-HQ-attribute-anno.txt — метки атрибутов для каждой из картинок
 
-Скрипт для генерации описаний при помощи Blip2 находится в файле data_analysis/сreate_celeba_blip_captions.py
-Скрипт для генерации 10 текстов по атрибутам от авторов оригинального датасета находится в файле data_analysis/create_caption.py
+Скрипт для генерации описаний при помощи Blip2 находится в файле [data_analysis/сreate_celeba_blip_captions.py](./data_analysis/create_celeba_blip_captions.py)
+Скрипт для генерации 10 текстов по атрибутам от авторов оригинального датасета находится в файле [data_analysis/create_caption.py](./data_analysis/create_caption.py)

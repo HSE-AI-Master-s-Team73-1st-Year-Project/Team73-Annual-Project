@@ -35,7 +35,7 @@ Text-to-Image Diffusion Models](https://arxiv.org/pdf/2308.06721). Суть да
 
 ![alt text](./assets/images/result_anime_pictures.jpg)
 
-Пример запуска скрипта обучения, работы с моделью и больше примеров генераций можно найти в файле ip_adapter_demo.ipynb
+Пример запуска скрипта обучения, работы с моделью и больше примеров генераций можно найти в файле [ip_adapter_demo.ipynb](./ip_adapter_demo.ipynb)
 
 ### Метрики
 
@@ -50,7 +50,7 @@ Text-to-Image Diffusion Models](https://arxiv.org/pdf/2308.06721). Суть да
 
 Дополнительно мы решили посчитать FID ([Frechet Inception Distance](https://torchmetrics.readthedocs.io/en/v1.2.0/image/frechet_inception_distance.html)) между сгенерированными картинками и изображениями из [Anime Face Dataset](https://www.kaggle.com/datasets/splcher/animefacedataset), чтобы проверить, насколько получившиеся картинки попадают в доман аниме. Тут также следует отметить, что FID - это очень специфическая метрика, значение которой зависит от множества факторов, и в данном случае она также не является стопроцентным показателем качества.
 
-Скрипт для подсчета метрик можно найти в файле ip_adapter_metrics.ipynb
+Скрипт для подсчета метрик можно найти в файле [ip_adapter_metrics.ipynb](./ip_adapter_metrics.ipynb)
 
 Текущие значения метрик:
 
