@@ -32,7 +32,7 @@
 - Файл [baseline.md](./baseline.md) — описание процесса построения бейзлайна (IP-Adapter).
 - Файл [dataset.md](./dataset.md) — информация об используемых данных.
 - Файл [EDA.md](./EDA.md) — общее описание проведенного EDA.
-- Папка /data_analysis:
+- Папка [/data_analysis](./data_analysis/):
     - [create_celeba_blip_captions.py](./data_analysis/create_celeba_blip_captions.py) и [create_caption.py](./data_analysis/create_caption.py) — скрипты для создания описаний к изображениям из датасета. Подробнее в [EDA.md](./EDA.md).
     - [EDA_images.ipynb](./data_analysis/EDA_images.ipynb) и [EDA_texts.ipynb](./data_analysis/EDA_text.ipynb) — ноутбуки с EDA.
 - Папка [/src](./src/) — основной код для обучения ip-адаптера и подсчета метрик.
