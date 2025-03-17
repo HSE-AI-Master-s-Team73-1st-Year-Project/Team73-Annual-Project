@@ -8,8 +8,7 @@ from torchmetrics import Metric
 from torchmetrics.functional.multimodal.clip_score import _get_clip_model_and_processor
 from torchmetrics.utilities.imports import _TRANSFORMERS_GREATER_EQUAL_4_10
 
-if TYPE_CHECKING and _TRANSFORMERS_GREATER_EQUAL_4_10:
-    from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPModel, CLIPProcessor
 
 
 def _clip_image_score_update(
@@ -69,19 +68,21 @@ class CLIPImageScore(Metric):
             "openai/clip-vit-large-patch14",
         ] = "openai/clip-vit-large-patch14",
         **kwargs: Any,
-    ) -> None:
+    ):
         super().__init__(**kwargs)
         self.model, self.processor = _get_clip_model_and_processor(model_name_or_path)
         self.add_state("score", torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_samples", torch.tensor(0, dtype=torch.long), dist_reduce_fx="sum")
-        self.score = None
-        self.n_samples = None
+        self.score = torch.tensor(0.0)
+        self.n_samples = torch.tensor(0, dtype=torch.long)
+        self.first_update = True
 
     def update(
         self, real_images: Union[Tensor, List[Tensor]], fake_images: Union[Tensor, List[Tensor]]
     ):  # pylint: disable=W0221
         score, n_samples = _clip_image_score_update(real_images, fake_images, self.model, self.processor)
-        if self.score is None:
+        if self.first_update:
+            self.first_update = False
             self.score = score.sum(0)
             self.n_samples = n_samples
         else:
