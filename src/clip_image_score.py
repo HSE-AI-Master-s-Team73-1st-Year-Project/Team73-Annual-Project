@@ -1,4 +1,4 @@
-from typing import Any, List, Union, TYPE_CHECKING
+from typing import Any, List, Union
 
 import torch
 from torch import Tensor
@@ -6,8 +6,6 @@ from typing_extensions import Literal
 
 from torchmetrics import Metric
 from torchmetrics.functional.multimodal.clip_score import _get_clip_model_and_processor
-from torchmetrics.utilities.imports import _TRANSFORMERS_GREATER_EQUAL_4_10
-
 from transformers import CLIPModel, CLIPProcessor
 
 

@@ -4,26 +4,33 @@ import itertools
 import math
 import os
 from pathlib import Path
+from PIL import Image
+from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
-import wandb
+
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration, set_seed
-from diffusers import (AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel)
-from PIL import Image
-from tqdm import tqdm
-from transformers import (CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection)
+from diffusers import (AutoencoderKL, DDPMScheduler, StableDiffusionPipeline,
+                       UNet2DConditionModel)
+from transformers import (CLIPTextModel, CLIPTokenizer,
+                          CLIPVisionModelWithProjection)
 
-from ip_adapter.ip_adapter import (ImageProjModel, IPAdapter)
+import wandb
+
+from ip_adapter.ip_adapter import ImageProjModel, IPAdapter, IPAdapterPlus
+from ip_adapter.resampler import Resampler
 from ip_adapter.utils import is_torch2_available
-from .dataset import MyDataset, collate_fn
+from dataset import MyIPAdapterDataset, collate_fn
 
 if is_torch2_available():
-    from ip_adapter.attention_processor import (AttnProcessor2_0 as AttnProcessor,
-                                                IPAttnProcessor2_0 as IPAttnProcessor)
+    from ip_adapter.attention_processor import \
+        AttnProcessor2_0 as AttnProcessor
+    from ip_adapter.attention_processor import \
+        IPAttnProcessor2_0 as IPAttnProcessor
 else:
-    from ip_adapter.attention_processor import (IPAttnProcessor, AttnProcessor)
+    from ip_adapter.attention_processor import AttnProcessor, IPAttnProcessor
 
 
 class IPAdapterModule(torch.nn.Module):
@@ -219,6 +226,18 @@ def parse_args():
         default="",
     )
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
+    parser.add_argument(
+        "--adapter_type",
+        type=str,
+        default="default",
+        choices=["default", "plus"]
+    )
+    parser.add_argument(
+        "--num_tokens",
+        type=int,
+        default=16,
+        help="Number of tokens to query from the CLIP image encoding.",
+    )
 
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -271,7 +290,7 @@ def training_epoch(
     train_epoch_loss = 0.0
     train_epoch_batch_sum = 0.0
 
-    for train_batch in enumerate(train_dataloader):
+    for train_batch in train_dataloader:
 
         train_step_loss = 0.0
 
@@ -294,17 +313,30 @@ def training_epoch(
             # (this is the forward diffusion process)
             noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
-            with torch.no_grad():
-                image_embeds = image_encoder(
-                    train_batch["clip_images"].to(accelerator.device, dtype=weight_dtype)
-                ).image_embeds
-            image_embeds_ = []
-            for image_embed, drop_image_embed in zip(image_embeds, train_batch["drop_image_embeds"]):
-                if drop_image_embed == 1:
-                    image_embeds_.append(torch.zeros_like(image_embed))
-                else:
-                    image_embeds_.append(image_embed)
-            image_embeds = torch.stack(image_embeds_)
+            image_embeds = None
+            if args.adapter_type == "default":
+                with torch.no_grad():
+                    image_embeds = image_encoder(
+                        train_batch["clip_images"].to(accelerator.device, dtype=weight_dtype)
+                    ).image_embeds
+                image_embeds_ = []
+                for image_embed, drop_image_embed in zip(image_embeds, train_batch["drop_image_embeds"]):
+                    if drop_image_embed == 1:
+                        image_embeds_.append(torch.zeros_like(image_embed))
+                    else:
+                        image_embeds_.append(image_embed)
+                image_embeds = torch.stack(image_embeds_)
+            else:
+                clip_images = []
+                for clip_image, drop_image_embed in zip(train_batch["clip_images"], train_batch["drop_image_embeds"]):
+                    if drop_image_embed == 1:
+                        clip_images.append(torch.zeros_like(clip_image))
+                    else:
+                        clip_images.append(clip_image)
+                clip_images = torch.stack(clip_images, dim=0)
+                with torch.no_grad():
+                    image_embeds = image_encoder(clip_images.to(accelerator.device, dtype=weight_dtype),
+                                                 output_hidden_states=True).hidden_states[-2]
 
             with torch.no_grad():
                 encoder_hidden_states = text_encoder(train_batch["text_input_ids"].to(accelerator.device))[0]
@@ -370,11 +402,25 @@ def main():  # pylint: disable=R0912,R0914,R0915
     image_encoder.requires_grad_(False)
 
     # ip-adapter
-    image_proj_model = ImageProjModel(
-        cross_attention_dim=unet.config.cross_attention_dim,
-        clip_embeddings_dim=image_encoder.config.projection_dim,
-        clip_extra_context_tokens=4,
-    )
+    image_proj_model = None
+    if args.adapter_type == "default":
+        image_proj_model = ImageProjModel(
+            cross_attention_dim=unet.config.cross_attention_dim,
+            clip_embeddings_dim=image_encoder.config.projection_dim,
+            clip_extra_context_tokens=4,
+        )
+    else:
+        image_proj_model = Resampler(
+            dim=unet.config.cross_attention_dim,
+            depth=4,
+            dim_head=64,
+            heads=12,
+            num_queries=args.num_tokens,
+            embedding_dim=image_encoder.config.hidden_size,
+            output_dim=unet.config.cross_attention_dim,
+            ff_mult=4
+        )
+
     # init adapter modules
     attn_procs = {}
     unet_sd = unet.state_dict()
@@ -419,7 +465,7 @@ def main():  # pylint: disable=R0912,R0914,R0915
     optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
 
     # dataloader
-    train_dataset = MyDataset(
+    train_dataset = MyIPAdapterDataset(
         args.data_csv_file, tokenizer=tokenizer, size=args.resolution, image_root_path=args.data_root_path
     )
     train_dataloader = torch.utils.data.DataLoader(
@@ -488,7 +534,14 @@ def main():  # pylint: disable=R0912,R0914,R0915
                     safety_checker=None,
                 )
                 pipeline.set_progress_bar_config(disable=True)
-                ip_model = IPAdapter(pipeline, args.image_encoder_path, checkpoint_path, accelerator.device)
+
+                ip_model = None
+                if args.adapter_type == "default":
+                    ip_model = IPAdapter(pipeline, args.image_encoder_path, checkpoint_path, accelerator.device)
+                else:
+                    ip_model = IPAdapterPlus(pipeline, args.image_encoder_path, checkpoint_path,
+                                             accelerator.device, num_tokens=16)
+
                 prompt_image = Image.open("/home/chaichuk/IP-Adapter-repo/assets/images/ai_face.png")
                 images = ip_model.generate(
                     pil_image=prompt_image,

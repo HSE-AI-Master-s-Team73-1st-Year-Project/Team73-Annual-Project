@@ -11,7 +11,7 @@ from tqdm import tqdm
 from transformers import CLIPImageProcessor
 
 
-class MyDataset(Dataset):  # pylint: disable=R0902
+class MyIPAdapterDataset(Dataset):  # pylint: disable=R0902
 
     def __init__(
         self, csv_file, tokenizer, size=512, t_drop_rate=0.05, i_drop_rate=0.05, ti_drop_rate=0.05, image_root_path=""
