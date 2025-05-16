@@ -4,3 +4,4 @@ checkpoints/
 tmp_checkpoints/
 models/
 logs/
+wandb/
