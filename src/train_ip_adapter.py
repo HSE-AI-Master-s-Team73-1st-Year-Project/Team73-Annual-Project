@@ -220,11 +220,6 @@ def parse_args():
         type=str,
         default="test_run",
     )
-    parser.add_argument(
-        "--prompt_image_path",
-        type=str,
-        default="",
-    )
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     parser.add_argument(
         "--adapter_type",
@@ -237,6 +232,11 @@ def parse_args():
         type=int,
         default=16,
         help="Number of tokens to query from the CLIP image encoding.",
+    )
+    parser.add_argument(
+        "--prompt_image_path",
+        type=str,
+        default="/home/chaichuk/IP-Adapter-notebooks/assets/images/girl_face.jpg"
     )
 
     args = parser.parse_args()
@@ -542,7 +542,7 @@ def main():  # pylint: disable=R0912,R0914,R0915
                     ip_model = IPAdapterPlus(pipeline, args.image_encoder_path, checkpoint_path,
                                              accelerator.device, num_tokens=16)
 
-                prompt_image = Image.open("/home/chaichuk/IP-Adapter-repo/assets/images/ai_face.png")
+                prompt_image = Image.open(args.prompt_image_path)
                 images = ip_model.generate(
                     pil_image=prompt_image,
                     num_samples=6,
