@@ -115,7 +115,7 @@ adapter_options = [f'{adapter_list['models'][name]["type"].upper()} {name}' for 
 # Кнопка замены адаптера
 st.subheader("Change Active IP-Adapter")
 if adapter_list["models"]:
-    selected_adapter = st.selectbox("Select IP-Adapter to Use", options=adapter_options)
+    selected_adapter = ' '.join(st.selectbox("Select IP-Adapter to Use", options=adapter_options).split(' ')[1:])
     st.caption(
         f"**:blue-background[{selected_adapter}] Checkpoint Description:** \
         {adapter_list["models"][selected_adapter]['description']}"
@@ -133,7 +133,8 @@ else:
 st.subheader("Upload New IP-Adapter Checkpoint")
 new_adapter_file = st.file_uploader("Upload Adapter Checkpoint (.bin)", type=["bin"])
 new_adapter_id = st.text_input("New Adapter ID")
-new_adapter_type = st.selectbox("Select IP-Adapter type", options=['IP-Adapter', 'IP_Adapter Plus'])
+new_adapter_type = st.selectbox("Select IP-Adapter type", options=['IP-Adapter', 'IP-Adapter Plus'])
+new_adapter_type = "basic" if new_adapter_type == 'IP-Adapter' else "plus"
 new_adapter_description = st.text_input("New Adapter Description (optional)")
 
 # Кнопка загрузки чекпоинта

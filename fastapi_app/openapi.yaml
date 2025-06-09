@@ -119,16 +119,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/ip_adapter/change_adapter:
+  /api/v1/ip_adapter/change_adapter_checkpoint:
     post:
-      summary: Change Adapter
+      summary: Change Adapter Checkpoint
       description: Change IP-Adapter checkpoint used in model
-      operationId: change_adapter_api_v1_ip_adapter_change_adapter_post
+      operationId: >-
+        change_adapter_checkpoint_api_v1_ip_adapter_change_adapter_checkpoint_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChangeAdapterRequest'
+              $ref: '#/components/schemas/ChangeAdapterCheckpointRequest'
         required: true
       responses:
         '200':
@@ -136,7 +137,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChangeAdapterResponse'
+                $ref: '#/components/schemas/ChangeAdapterCheckpointResponse'
         '422':
           description: Validation Error
           content:
@@ -164,6 +165,12 @@ paths:
               - type: string
               - type: 'null'
             title: Description
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AdapterType'
+            default: basic
       requestBody:
         required: true
         content:
@@ -177,7 +184,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoadAdapterResponse'
+                $ref: '#/components/schemas/LoadAdapterCheckpointResponse'
         '422':
           description: Validation Error
           content:
@@ -196,7 +203,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ModelListResponse'
+                $ref: '#/components/schemas/CheckpointsListResponse'
   /api/v1/ip_adapter/get_available_model_types:
     get:
       summary: Get Available Model Types
@@ -264,6 +271,12 @@ paths:
                 title: Response Remove All Api V1 Ip Adapter Remove All Delete
 components:
   schemas:
+    AdapterType:
+      type: string
+      enum:
+        - basic
+        - plus
+      title: AdapterType
     Body_generate_images_api_v1_ip_adapter_generate_images_post:
       properties:
         files:
@@ -301,7 +314,7 @@ components:
         - file
       title: >-
         Body_load_new_adapter_checkpoint_api_v1_ip_adapter_load_new_adapter_checkpoint_post
-    ChangeAdapterRequest:
+    ChangeAdapterCheckpointRequest:
       properties:
         id:
           type: string
@@ -309,8 +322,8 @@ components:
       type: object
       required:
         - id
-      title: ChangeAdapterRequest
-    ChangeAdapterResponse:
+      title: ChangeAdapterCheckpointRequest
+    ChangeAdapterCheckpointResponse:
       properties:
         message:
           type: string
@@ -318,7 +331,7 @@ components:
       type: object
       required:
         - message
-      title: ChangeAdapterResponse
+      title: ChangeAdapterCheckpointResponse
     ChangeModelRequest:
       properties:
         model_type:
@@ -336,6 +349,19 @@ components:
       required:
         - message
       title: ChangeModelResponse
+    CheckpointsListResponse:
+      properties:
+        models:
+          additionalProperties:
+            additionalProperties:
+              type: string
+            type: object
+          type: object
+          title: Models
+      type: object
+      required:
+        - models
+      title: CheckpointsListResponse
     CurrentModelResponse:
       properties:
         model_type:
@@ -360,7 +386,7 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
-    LoadAdapterResponse:
+    LoadAdapterCheckpointResponse:
       properties:
         message:
           type: string
@@ -368,7 +394,7 @@ components:
       type: object
       required:
         - message
-      title: LoadAdapterResponse
+      title: LoadAdapterCheckpointResponse
     ModelListResponse:
       properties:
         models:

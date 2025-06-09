@@ -373,7 +373,8 @@ async def load_new_adapter_checkpoint(data: LoadAdapterCheckpointRequest = Depen
         logger.error("LOAD_NEW_ADAPTER_CHECKPOINT. ERROR. IP-Adapter %s is already exists.")
         raise HTTPException(status_code=422, detail=f"IP Adapter {data.id} is already exists")
 
-    file_save_path = f"{TEMPORARY_CHECKPOINTS_PATH}/{data.type}/{data.id}.bin"
+    type = "basic" if data.type == "basic" else "plus"
+    file_save_path = f"{TEMPORARY_CHECKPOINTS_PATH}/{type}/{data.id}.bin"
 
     try:
         logger.info("LOAD_NEW_ADAPTER_CHECKPOINT. Loading checkpoint.")
@@ -388,7 +389,7 @@ async def load_new_adapter_checkpoint(data: LoadAdapterCheckpointRequest = Depen
         "description": data.description if data.description is not None else f"{data.id} checkpoint",
         "path": file_save_path,
         "preloaded": False,
-        "type": data.type
+        "type": type
     }
     logger.info("LOAD_NEW_ADAPTER_CHECKPOINT. Checkpoint successfully saved into %s.", file_save_path)
     logger.debug("LOAD_NEW_ADAPTER_CHECKPOINT. Checkpoint saved with params: %s.", config["adapters_list"][data.id])
