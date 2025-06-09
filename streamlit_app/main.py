@@ -141,7 +141,7 @@ new_adapter_description = st.text_input("New Adapter Description (optional)")
 if st.button("Upload Checkpoint"):
     if new_adapter_file and new_adapter_id:
         logger.info('Loading new adapter checkpoint.')
-        result = run_async(load_new_adapter_checkpoint(new_adapter_file, new_adapter_id, new_adapter_description))
+        result = run_async(load_new_adapter_checkpoint(new_adapter_file, new_adapter_id, new_adapter_description, new_adapter_type))
         logger.info("Loaded adapter with id: %s. Please reload the page.", new_adapter_id)
         st.success(result["message"])
     else:
