@@ -21,20 +21,26 @@ class ImageGenerationRequest(BaseModel):
     device: DeviceType = "cuda"
 
 
-class LoadAdapterRequest(BaseModel):
+class AdapterType(str, Enum):
+    BASIC = "basic"
+    PLUS = "plus"
+
+
+class LoadAdapterCheckpointRequest(BaseModel):
     id: str
     description: Optional[str] = None
+    type: AdapterType = "basic"
 
 
-class LoadAdapterResponse(BaseModel):
+class LoadAdapterCheckpointResponse(BaseModel):
     message: str
 
 
-class ChangeAdapterRequest(BaseModel):
+class ChangeAdapterCheckpointRequest(BaseModel):
     id: str
 
 
-class ChangeAdapterResponse(BaseModel):
+class ChangeAdapterCheckpointResponse(BaseModel):
     message: str
 
 
@@ -53,6 +59,10 @@ class ChangeModelResponse(BaseModel):
 
 class ModelListResponse(BaseModel):
     models: Dict[str, str]
+
+
+class CheckpointsListResponse(BaseModel):
+    models: Dict[str, Dict[str, str]]
 
 
 class CurrentModelResponse(BaseModel):

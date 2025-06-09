@@ -8,6 +8,7 @@ from safetensors import safe_open
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
 from .utils import is_torch2_available, get_generator
+from .resampler import Resampler
 
 if is_torch2_available():
     from .attention_processor import (
@@ -230,3 +231,34 @@ class IPAdapter:  # pylint: disable=R0902
         ).images
 
         return images
+
+
+class IPAdapterPlus(IPAdapter):
+    """IP-Adapter with fine-grained features"""
+
+    def init_proj(self):
+        image_proj_model = Resampler(
+            dim=self.pipe.unet.config.cross_attention_dim,
+            depth=4,
+            dim_head=64,
+            heads=12,
+            num_queries=self.num_tokens,
+            embedding_dim=self.image_encoder.config.hidden_size,
+            output_dim=self.pipe.unet.config.cross_attention_dim,
+            ff_mult=4,
+        ).to(self.device, dtype=torch.float16)
+        return image_proj_model
+
+    @torch.inference_mode()
+    def get_image_embeds(self, pil_image=None, clip_image_embeds=None):
+        if isinstance(pil_image, Image.Image):
+            pil_image = [pil_image]
+        clip_image = self.clip_image_processor(images=pil_image, return_tensors="pt").pixel_values
+        clip_image = clip_image.to(self.device, dtype=torch.float16)
+        clip_image_embeds = self.image_encoder(clip_image, output_hidden_states=True).hidden_states[-2]
+        image_prompt_embeds = self.image_proj_model(clip_image_embeds)
+        uncond_clip_image_embeds = self.image_encoder(
+            torch.zeros_like(clip_image), output_hidden_states=True
+        ).hidden_states[-2]
+        uncond_image_prompt_embeds = self.image_proj_model(uncond_clip_image_embeds)
+        return image_prompt_embeds, uncond_image_prompt_embeds

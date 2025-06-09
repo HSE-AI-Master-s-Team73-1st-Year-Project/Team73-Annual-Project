@@ -14,20 +14,22 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from starlette.responses import StreamingResponse
 from PIL import Image
 from pydantic_models.models import (
-    ChangeAdapterRequest,
-    ChangeAdapterResponse,
+    ChangeAdapterCheckpointRequest,
+    ChangeAdapterCheckpointResponse,
     ChangeModelRequest,
     ChangeModelResponse,
     ImageGenerationRequest,
-    LoadAdapterRequest,
-    LoadAdapterResponse,
+    LoadAdapterCheckpointRequest,
+    LoadAdapterCheckpointResponse,
     ModelListResponse,
     CurrentModelResponse,
     RemoveResponse,
+    CheckpointsListResponse
 )
-from ip_adapter import IPAdapter
+from ip_adapter import IPAdapter, IPAdapterPlus
 
-DEFAULT_CHECKPOINT_NAME = "512_res_model_checkpoint_100"
+DEFAULT_BASIC_CHECKPOINT_NAME = "basic_checkpoint_100"
+DEFAULT_PLUS_CHECKPOINT_NAME = "basic_checkpoint_plus_100"
 PRELOADED_CHECKPOINTS_PATH = "/home/chaichuk/Team73-Annual-Project/checkpoints"
 TEMPORARY_CHECKPOINTS_PATH = "/home/chaichuk/Team73-Annual-Project/tmp_checkpoints"
 IMAGE_ENCODER_PATH = "/home/chaichuk/Team73-Annual-Project/models/image_encoder"
@@ -72,6 +74,7 @@ config = {
     "vae": None,
     "pipeline": None,
     "ip_adapter": None,
+    "current_ip_adapter_type": None,
     "sd_version": None,
     "adapters_list": {},
     "current_adapter": None,
@@ -113,34 +116,61 @@ async def lifespan(lifespan_router: APIRouter):  # pylint: disable=unused-argume
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    config['current_ip_adapter_type'] = 'basic'
+
     os.makedirs(TEMPORARY_CHECKPOINTS_PATH, exist_ok=True)
+    os.makedirs(f'{TEMPORARY_CHECKPOINTS_PATH}/basic', exist_ok=True)
+    os.makedirs(f'{TEMPORARY_CHECKPOINTS_PATH}/plus', exist_ok=True)
 
-    available_checkpoints = os.listdir(PRELOADED_CHECKPOINTS_PATH)
+    available_checkpoints_basic = os.listdir(f'{PRELOADED_CHECKPOINTS_PATH}/basic')
+    available_checkpoints_plus = os.listdir(f'{PRELOADED_CHECKPOINTS_PATH}/plus')
 
-    default_index = available_checkpoints.index(DEFAULT_CHECKPOINT_NAME)
+    default_index = available_checkpoints_basic.index(DEFAULT_BASIC_CHECKPOINT_NAME)
+    default_index_plus = available_checkpoints_plus.index(DEFAULT_PLUS_CHECKPOINT_NAME)
 
-    basic_ckpt_path = f"{PRELOADED_CHECKPOINTS_PATH}/{DEFAULT_CHECKPOINT_NAME}/ip_adapter.bin"
+    preloaded_ckpt_path_basic = f"{PRELOADED_CHECKPOINTS_PATH}/basic/{DEFAULT_BASIC_CHECKPOINT_NAME}/ip_adapter.bin"
+    preloaded_ckpt_path_plus = f"{PRELOADED_CHECKPOINTS_PATH}/plus/{DEFAULT_PLUS_CHECKPOINT_NAME}/ip_adapter.bin"
 
     config["adapters_list"] = {
-        "Default": {
+        "Default IP-Adapter": {
             "description": "Default IP-Adapter checkpoint. Trained for use with face images.",
-            "path": basic_ckpt_path,
+            "path": preloaded_ckpt_path_basic,
             "preloaded": True,
+            "type": "basic"
+        },
+        "Default IP-Adapter Plus": {
+            "description": "Default IP-Adapter Plus checkpoint. Trained for use with face images.",
+            "path": preloaded_ckpt_path_plus,
+            "preloaded": True,
+            "type": "plus"
         }
     }
 
-    for i, adapter_name in enumerate(available_checkpoints):
+    for i, adapter_name in enumerate(available_checkpoints_basic):
         if i == default_index:
             continue
+
         config['adapters_list'][adapter_name] = {
-            "description": f"preloaded checkpoint {i}",
-            "path": f"{PRELOADED_CHECKPOINTS_PATH}/{adapter_name}/ip_adapter.bin",
+            "description": f"Preloaded IP-Adapter checkpoint {i}",
+            "path": f"{PRELOADED_CHECKPOINTS_PATH}/basic/{adapter_name}/ip_adapter.bin",
             "preloaded": True,
+            "type": "basic"
         }
 
-    config["current_adapter"] = 'Default'
+    for i, adapter_name in enumerate(available_checkpoints_plus):
+        if i == default_index_plus:
+            continue
 
-    ip_model = IPAdapter(pipeline, IMAGE_ENCODER_PATH, basic_ckpt_path, device)
+        config['adapters_list'][adapter_name] = {
+            "description": f"Preloaded IP-Adapter Plus checkpoint {i}",
+            "path": f"{PRELOADED_CHECKPOINTS_PATH}/plus/{adapter_name}/ip_adapter.bin",
+            "preloaded": True,
+            "type": "plus"
+        }
+
+    config["current_adapter"] = 'Default IP-Adapter'
+
+    ip_model = IPAdapter(pipeline, IMAGE_ENCODER_PATH, preloaded_ckpt_path_basic, device)
 
     config["scheduler"] = noise_scheduler
     config["vae"] = vae
@@ -289,40 +319,51 @@ async def change_model(request: ChangeModelRequest):
     return ChangeModelResponse(message=f"Model type successfully changed to {config["sd_version"]}")
 
 
-@router.post("/change_adapter", response_model=ChangeAdapterResponse, status_code=HTTPStatus.OK)
-async def change_adapter(request: ChangeAdapterRequest):
+@router.post("/change_adapter_checkpoint", response_model=ChangeAdapterCheckpointResponse, status_code=HTTPStatus.OK)
+async def change_adapter_checkpoint(request: ChangeAdapterCheckpointRequest):
     """Change IP-Adapter checkpoint used in model"""
 
     logger.info("CHANGE_ADAPTER. Request.")
     logger.debug("CHANGE_ADAPTER. Request with params: %s", request)
     if request.id not in config["adapters_list"]:
         logger.error("CHANGE_ADAPTER. ERROR. Adapter not found: %s.", request.id)
-        raise HTTPException(status_code=422, detail=f"IP-Adapter {request.id} not found")
+        raise HTTPException(status_code=422, detail=f"IP-Adapter checkpoint {request.id} not found")
 
     if request.id == config["current_adapter"]:
         logger.info("CHANGE_ADAPTER. Adapter %s is already in use.")
-        return ChangeAdapterResponse(message=f"IP-Adapter {request.id} is already in use")
+        return ChangeAdapterCheckpointResponse(message=f"IP-Adapter checkpoint {request.id} is already in use")
 
     try:
-        logger.info("CHANGE_ADAPTER. Loading %s adapter.", request.id)
+        logger.info("CHANGE_ADAPTER. Loading %s adapter checkpoint.", request.id)
 
-        config["ip_adapter"] = IPAdapter(
-            config["pipeline"],
-            IMAGE_ENCODER_PATH,
-            config["adapters_list"][request.id]["path"],
-            config["current_device"],
-        )
+        if config["adapters_list"][request.id]["type"] == "basic":
+            config["ip_adapter"] = IPAdapter(
+                config["pipeline"],
+                IMAGE_ENCODER_PATH,
+                config["adapters_list"][request.id]["path"],
+                config["current_device"],
+            )
+            config['current_ip_adapter_type'] = "basic"
+        else:
+            config["ip_adapter"] = IPAdapterPlus(
+                config["pipeline"],
+                IMAGE_ENCODER_PATH,
+                config["adapters_list"][request.id]["path"],
+                config["current_device"],
+                num_tokens=16
+            )
+            config['current_ip_adapter_type'] = "plus"
 
     except Exception as e:
-        logger.error("CHANGE_ADAPTER. ERROR while loading IP-Adapter: %s.", str(e))
+        logger.error("CHANGE_ADAPTER. ERROR while loading IP-Adapter checkpoint: %s.", str(e))
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     logger.info("CHANGE_ADAPTER. Adapter %s successfully loaded.", request.id)
-    return ChangeAdapterResponse(message=f"IP-Adapter successfully changed to {request.id}")
+    return ChangeAdapterCheckpointResponse(message=f"IP-Adapter checkpoint successfully changed to {request.id}")
 
 
-@router.post("/load_new_adapter_checkpoint", response_model=LoadAdapterResponse, status_code=HTTPStatus.OK)
-async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file: UploadFile = File(...)):
+@router.post("/load_new_adapter_checkpoint", response_model=LoadAdapterCheckpointResponse, status_code=HTTPStatus.OK)
+async def load_new_adapter_checkpoint(data: LoadAdapterCheckpointRequest = Depends(), file: UploadFile = File(...)):
     """Change IP-Adapter checkpoint used in model"""
 
     logger.info("LOAD_NEW_ADAPTER_CHECKPOINT. Request.")
@@ -332,7 +373,7 @@ async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file
         logger.error("LOAD_NEW_ADAPTER_CHECKPOINT. ERROR. IP-Adapter %s is already exists.")
         raise HTTPException(status_code=422, detail=f"IP Adapter {data.id} is already exists")
 
-    file_save_path = f"{TEMPORARY_CHECKPOINTS_PATH}/{data.id}.bin"
+    file_save_path = f"{TEMPORARY_CHECKPOINTS_PATH}/{data.type}/{data.id}.bin"
 
     try:
         logger.info("LOAD_NEW_ADAPTER_CHECKPOINT. Loading checkpoint.")
@@ -347,21 +388,23 @@ async def load_new_adapter_checkpoint(data: LoadAdapterRequest = Depends(), file
         "description": data.description if data.description is not None else f"{data.id} checkpoint",
         "path": file_save_path,
         "preloaded": False,
+        "type": data.type
     }
     logger.info("LOAD_NEW_ADAPTER_CHECKPOINT. Checkpoint successfully saved into %s.", file_save_path)
     logger.debug("LOAD_NEW_ADAPTER_CHECKPOINT. Checkpoint saved with params: %s.", config["adapters_list"][data.id])
-    return ChangeAdapterResponse(message=f"IP Adapter {data.id} loaded successfully")
+    return ChangeAdapterCheckpointResponse(message=f"IP Adapter {data.id} loaded successfully")
 
 
-@router.get("/get_available_adapter_checkpoints", response_model=ModelListResponse, status_code=HTTPStatus.OK)
+@router.get("/get_available_adapter_checkpoints", response_model=CheckpointsListResponse, status_code=HTTPStatus.OK)
 async def get_available_adapter_checkpoints():
     """Get list of all available for inference IP-Adapters"""
 
     logger.info("GET_ADAPTERS_LIST. Request.")
     adapters_list = {
-        adapter_id: config["adapters_list"][adapter_id]["description"] for adapter_id in config["adapters_list"]
+        adapter_id: {"description": config["adapters_list"][adapter_id]["description"],
+                     "type": config["adapters_list"][adapter_id]["type"]} for adapter_id in config["adapters_list"] 
     }
-    return ModelListResponse(models=adapters_list)
+    return CheckpointsListResponse(models=adapters_list)
 
 
 @router.get("/get_available_model_types", response_model=ModelListResponse, status_code=HTTPStatus.OK)
@@ -410,7 +453,7 @@ async def remove(model_id: str):
             config["ip_adapter"] = IPAdapter(
                 config["pipeline"],
                 IMAGE_ENCODER_PATH,
-                config["adapters_list"]['default']["path"],
+                config["adapters_list"]["Default IP-Adapter"]["path"],
                 config["current_device"],
             )
         except Exception as e:
@@ -448,7 +491,7 @@ async def remove_all():
             config["ip_adapter"] = IPAdapter(
                 config["pipeline"],
                 IMAGE_ENCODER_PATH,
-                config["adapters_list"]['default']["path"],
+                config["adapters_list"]["Default IP-Adapter"]["path"],
                 config["current_device"],
             )
         except Exception as e:
