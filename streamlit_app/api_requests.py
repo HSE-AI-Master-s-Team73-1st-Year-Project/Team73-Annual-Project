@@ -58,23 +58,23 @@ async def generate_images(
             return {'code': 200, 'result': final_images}
 
 
-async def load_new_adapter_checkpoint(file, adapter_id: str, description: str = None):
+async def load_new_adapter_checkpoint(file, adapter_id: str, description: str = None, type: str = "basic"):
     """Change IP-Adapter checkpoint used in model"""
     async with aiohttp.ClientSession() as session:
         form_data = RepeatableFormData()
         form_data.add_field('file', file.read(), content_type=file.type)
 
-        params = {"id": adapter_id, "description": description}
+        params = {"id": adapter_id, "description": description, "type": type}
         async with session.post(f"{API_URL}/load_new_adapter_checkpoint/", params=params, data=form_data) as response:
             return await response.json()
 
 
-async def change_adapter(adapter_id: str, description: str = None):
+async def change_adapter_checkpoint(adapter_id: str):
     """Change IP-Adapter checkpoint used in model"""
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
-            f"{API_URL}/change_adapter/", json={"id": adapter_id, "description": description}
+            f"{API_URL}/change_adapter_checkpoint/", json={"id": adapter_id}
         ) as response:
             return await response.json()
 

@@ -2,7 +2,7 @@ import streamlit as st
 from api_requests import (
     generate_images,
     load_new_adapter_checkpoint,
-    change_adapter,
+    change_adapter_checkpoint,
     change_model,
     get_available_adapter_checkpoints,
     get_available_model_types,
@@ -110,17 +110,19 @@ if st.button("Start Generation", type="primary", use_container_width=True):
 # Список адаптеров
 logger.info("Getting adapters list.")
 adapter_list = run_async(get_available_adapter_checkpoints())
+adapter_options = [f'{adapter_list['models'][name]["type"].upper()} {name}' for name in adapter_list['models']]
 
 # Кнопка замены адаптера
 st.subheader("Change Active IP-Adapter")
 if adapter_list["models"]:
-    selected_adapter = st.selectbox("Select IP-Adapter to Use", options=list(adapter_list["models"].keys()))
+    selected_adapter = ' '.join(st.selectbox("Select IP-Adapter to Use", options=adapter_options).split(' ')[1:])
     st.caption(
-        f"**:blue-background[{selected_adapter}] Checkpoint Description:** {adapter_list["models"][selected_adapter]}"
+        f"**:blue-background[{selected_adapter}] Checkpoint Description:** \
+        {adapter_list["models"][selected_adapter]['description']}"
     )
     if st.button("Change IP-Adapter"):
         logger.info("Changing adapter to %s", selected_adapter)
-        result = run_async(change_adapter(selected_adapter))
+        result = run_async(change_adapter_checkpoint(selected_adapter))
         logger.info("Adapter changed to: %s", selected_adapter)
         st.success(f"{result['message']}.")
 else:
@@ -131,13 +133,15 @@ else:
 st.subheader("Upload New IP-Adapter Checkpoint")
 new_adapter_file = st.file_uploader("Upload Adapter Checkpoint (.bin)", type=["bin"])
 new_adapter_id = st.text_input("New Adapter ID")
+new_adapter_type = st.selectbox("Select IP-Adapter type", options=['IP-Adapter', 'IP-Adapter Plus'])
+new_adapter_type = "basic" if new_adapter_type == 'IP-Adapter' else "plus"
 new_adapter_description = st.text_input("New Adapter Description (optional)")
 
 # Кнопка загрузки чекпоинта
 if st.button("Upload Checkpoint"):
     if new_adapter_file and new_adapter_id:
         logger.info('Loading new adapter checkpoint.')
-        result = run_async(load_new_adapter_checkpoint(new_adapter_file, new_adapter_id, new_adapter_description))
+        result = run_async(load_new_adapter_checkpoint(new_adapter_file, new_adapter_id, new_adapter_description, new_adapter_type))
         logger.info("Loaded adapter with id: %s. Please reload the page.", new_adapter_id)
         st.success(result["message"])
     else:
